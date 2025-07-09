@@ -1,0 +1,29 @@
+{
+  "items": [
+    {
+      "name": "BB+ 汉化包",
+      "required": true,
+      "checked": true,
+      "id": "main",
+      "desc": "<b>BB+ 汉化包</b>: 主汉化程序，必选组件",
+      "default_path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Baldi's Basics Plus",
+      "after": null
+    },
+    {
+      "name": "其他模组",
+      "required": false,
+      "checked": false,
+      "id": "other_mods",
+      "desc": "<b>其他模组</b>: 可选附加模组",
+      "after": null
+    },
+    {
+      "name": "模组API (大多数模组的前置)",
+      "required": true,
+      "checked": true,
+      "id": "modding_api",
+      "desc": "<b>模组API</b>: 所有模组运行的基础，安装后可以加载其他汉化模组",
+      "after": "other_mods"
+    }
+  ]
+}

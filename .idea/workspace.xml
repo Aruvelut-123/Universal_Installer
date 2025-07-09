@@ -4,13 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="932e9eb6-c186-44d7-8d03-f9ea206d0213" name="更改" comment="still try to fix script bugs">
-      <change afterPath="$PROJECT_DIR$/component_pack/metadata.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/icon.ico" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/LICENSE" beforeDir="false" afterPath="$PROJECT_DIR$/LICENSE" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-    </list>
+    <list default="true" id="932e9eb6-c186-44d7-8d03-f9ea206d0213" name="更改" comment="update skeletons" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -122,7 +116,15 @@
       <option name="project" value="LOCAL" />
       <updated>1752026014889</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="update skeletons">
+      <option name="closed" value="true" />
+      <created>1752055324891</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1752055324891</updated>
+    </task>
+    <option name="localTasksCounter" value="7" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -141,6 +143,7 @@
     <MESSAGE value="update build script" />
     <MESSAGE value="fix script bugs" />
     <MESSAGE value="still try to fix script bugs" />
-    <option name="LAST_COMMIT_MESSAGE" value="still try to fix script bugs" />
+    <MESSAGE value="update skeletons" />
+    <option name="LAST_COMMIT_MESSAGE" value="update skeletons" />
   </component>
 </project>
