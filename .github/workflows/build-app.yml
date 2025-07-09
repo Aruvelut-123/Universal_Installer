@@ -26,6 +26,7 @@ jobs:
     - name: Build exe
       run: |
         pyinstaller -F main.py
+        ls /home/runner/work/Universal_Installer/Universal_Installer/dist
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
       with:
