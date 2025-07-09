@@ -124,7 +124,39 @@
       <option name="project" value="LOCAL" />
       <updated>1752055324891</updated>
     </task>
-    <option name="localTasksCounter" value="7" />
+    <task id="LOCAL-00007" summary="update skeletons">
+      <option name="closed" value="true" />
+      <created>1752055427999</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1752055427999</updated>
+    </task>
+    <task id="LOCAL-00008" summary="update skeletons">
+      <option name="closed" value="true" />
+      <created>1752055431665</created>
+      <option name="number" value="00008" />
+      <option name="presentableId" value="LOCAL-00008" />
+      <option name="project" value="LOCAL" />
+      <updated>1752055431665</updated>
+    </task>
+    <task id="LOCAL-00009" summary="update skeletons">
+      <option name="closed" value="true" />
+      <created>1752055537038</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1752055537039</updated>
+    </task>
+    <task id="LOCAL-00010" summary="update skeletons">
+      <option name="closed" value="true" />
+      <created>1752055604109</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1752055604109</updated>
+    </task>
+    <option name="localTasksCounter" value="11" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
