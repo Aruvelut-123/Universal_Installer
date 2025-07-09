@@ -10,7 +10,30 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  build_for_windows:
+    name: Build for Windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      - name: Build binary
+        run: |
+          pyinstaller -F main.py
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer windows.exe
+          path: ./dist/main.exe
+  build_for_linux:
+    name: Build for linux
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -23,12 +46,11 @@ jobs:
         python -m pip install --upgrade pip
         pip install pyinstaller
         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-    - name: Build exe
+    - name: Build binary
       run: |
         pyinstaller -F main.py
-        ls /home/runner/work/Universal_Installer/Universal_Installer/dist
-    - name: Upload artifacts
+    - name: Upload binary
       uses: actions/upload-artifact@v4
       with:
-        name: installer.exe
-        path: ./dist/main.exe
+        name: installer linux
+        path: ./dist/main
