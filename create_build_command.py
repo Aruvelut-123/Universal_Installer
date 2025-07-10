@@ -1,7 +1,9 @@
 import json
 import os
 
-command = 'pyinstaller -y --clean --onefile --windowed'
+command = 'pyinstaller -y --clean --onefile'
+
+#command += " --windowed"
 
 with open("metadata.json", "r", encoding="utf-8") as f:
     md = json.load(f)

@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import shutil
+import time
 import winreg
 import ctypes
 from typing import override, Any
@@ -90,6 +91,7 @@ class InstallThread(QThread):
             if not os.path.exists(self.path):
                 os.makedirs(self.path, exist_ok=True)
 
+            time.sleep(2)
             # 1. 复制文件到临时目录
             self.progress_updated.emit(10, "正在复制安装文件...")
             temp_dir = os.path.join(self.path, "__temp_install")
@@ -102,14 +104,17 @@ class InstallThread(QThread):
                 if self.components[component]:
                     for item in get_metadata()["items"]:
                         if item["id"] == component:
-                            for file in item["files"]:
-                                files_to_copy.append(file)
-                            break
+                            if item["files"] is not None:
+                                for file in item["files"]:
+                                    files_to_copy.append(file)
+                                break
 
             for file in files_to_copy:
+                file = file.replace("/", "\\")
                 shutil.copy(file, temp_dir)
                 self.progress_updated.emit(10, f"复制文件: {file}")
 
+            time.sleep(2)
             # 2. 安装组件
             progress = 10
             step = 80 / len(self.components)
@@ -120,35 +125,39 @@ class InstallThread(QThread):
                     os.chdir(temp_dir)
                     for item in get_metadata()["items"]:
                         if item["id"] == component:
-                            for file in item["files"]:
-                                in_path : str = ""
-                                file_type = ""
-                                result = file.split(".")
-                                if file in item["actions"]:
-                                    in_path = item["actions"][file]
-                                    in_path = in_path.replace("{install_path}", self.path)
-                                else:
-                                    continue
-                                match result[1]:
-                                    case "zip":
-                                        file_type = "zip"
-                                    case "rar":
-                                        file_type = "rar"
-                                    case "7z":
-                                        file_type = "7z"
-                                    case "tar":
-                                        file_type = "tar.gz"
-                                    case _:
+                            if item["files"] is not None:
+                                for file in item["files"]:
+                                    file = file.replace("/", "\\")
+                                    in_path : str = ""
+                                    file_type = ""
+                                    result = file.split(".")
+                                    if file in item["actions"]:
+                                        in_path = item["actions"][file]
+                                        in_path = in_path.replace("{install_path}", self.path)
+                                    else:
                                         continue
-                                self.run_extract(file, file_type, in_path)
+                                    match result[1]:
+                                        case "zip":
+                                            file_type = "zip"
+                                        case "rar":
+                                            file_type = "rar"
+                                        case "7z":
+                                            file_type = "7z"
+                                        case "tar":
+                                            file_type = "tar.gz"
+                                        case _:
+                                            continue
+                                    self.run_extract(file, file_type, in_path)
 
+            time.sleep(2)
             # 3. 清理临时文件
             self.progress_updated.emit(90, "正在清理临时文件...")
-            shutil.rmtree(temp_dir)
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
+            time.sleep(2)
             # 4. 注册表操作
-            #self.progress_updated.emit(95, "正在更新系统设置...")
-            #self.create_registry_entries()
+            self.progress_updated.emit(95, "正在更新系统设置...")
+            self.create_registry_entries()
 
             self.success = True
             self.progress_updated.emit(100, "安装完成！")
@@ -420,22 +429,6 @@ class WelcomePage(BasePage):
         self.parent.cancel_installation()
 
     def on_next(self):
-        self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path"]
-        # 尝试从注册表读取之前保存的安装路径
-        try:
-            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REGISTRY_KEY)
-            path, _ = winreg.QueryValueEx(key, "")
-            winreg.CloseKey(key)
-            if os.path.exists(path):
-                self.parent.install_path = path
-            else:
-                if os.path.exists(self.default_path):
-                    self.parent.install_path = self.default_path
-        except:
-            # 如果注册表不存在，使用默认路径
-            if os.path.exists(self.default_path):
-                self.parent.install_path = self.default_path
-
         self.parent.go_to_page("license")
 
 
@@ -724,9 +717,11 @@ class DirectoryPage(BasePage):
             tip_label.setStyleSheet("font-size: 9pt; color: #4BA348; margin-bottom: 10px;")
             path_layout.addWidget(tip_label)
 
+        self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path"]
+
         # 路径选择框
         path_form = QHBoxLayout()
-        self.path_input = QLineEdit(self.parent.install_path or "")
+        self.path_input = QLineEdit(self.default_path)
         browse_btn = QPushButton("浏览...")
         browse_btn.setMinimumWidth(80)
         browse_btn.clicked.connect(self.browse_directory)
@@ -738,7 +733,7 @@ class DirectoryPage(BasePage):
         self.space_layout = QHBoxLayout()
         self.space_layout.addStretch(1)
 
-        self.required_label = QLabel("所需空间: 15.6 MB")
+        self.required_label = QLabel("所需空间: 0 MB")
         self.required_label.setStyleSheet("font-size: 9pt; margin: 5px;")
 
         self.available_label = QLabel()
@@ -841,7 +836,7 @@ class InstallPage(QWidget):
                 border: 1px solid #CCCCCC;
                 border-radius: 5px;
                 text-align: center;
-                background: white;
+                background: black;
             }
             QProgressBar::chunk {
                 background-color: #4BA348;
@@ -863,8 +858,8 @@ class InstallPage(QWidget):
         main_layout.addWidget(logs_group)
 
         # 按钮区域
-        button_layout = QHBoxLayout()
-        button_layout.addStretch(1)
+        self.button_layout = QHBoxLayout()
+        self.button_layout.addStretch(1)
 
         # 显示详情按钮
         self.details_button = QPushButton("隐藏详情(D)")
@@ -879,9 +874,13 @@ class InstallPage(QWidget):
             }
         """)
         self.details_button.clicked.connect(self.toggle_details)
-        button_layout.addWidget(self.details_button)
+        self.button_layout.addWidget(self.details_button)
 
-        main_layout.addLayout(button_layout)
+        # 添加按钮
+        self.next_button = self.add_button("下一步(F)", self.on_next, "primary")
+        self.next_button.setEnabled(False)
+
+        main_layout.addLayout(self.button_layout)
 
         # 底部信息
         footer_label = QLabel(get_installer_metadata()["footer_info"])
@@ -892,6 +891,49 @@ class InstallPage(QWidget):
 
         # 初始化时显示日志区域
         self.log_area_visible = True
+
+    def add_button(self, text, callback, style="default"):
+        button = QPushButton(text)
+        button_font = QFont("Microsoft YaHei UI", 9)
+        button.setFont(button_font)
+        button.setMinimumSize(100, 30)
+
+        if style == "primary":
+            button.setStyleSheet(
+                "QPushButton {"
+                "   background-color: #4BA348;"
+                "   color: white;"
+                "   border: 1px solid #3D8C39;"
+                "   border-radius: 3px;"
+                "   padding: 5px 15px;"
+                "}"
+                "QPushButton:hover {"
+                "   background-color: #3D8C39;"
+                "}"
+                "QPushButton:pressed {"
+                "   background-color: #2D6C29;"
+                "}"
+            )
+        else:
+            button.setStyleSheet(
+                "QPushButton {"
+                "   background-color: #F1F1F1;"
+                "   color: #333333;"
+                "   border: 1px solid #CCCCCC;"
+                "   border-radius: 3px;"
+                "   padding: 5px 15px;"
+                "}"
+                "QPushButton:hover {"
+                "   background-color: #E5E5E5;"
+                "}"
+                "QPushButton:pressed {"
+                "   background-color: #D9D9D9;"
+                "}"
+            )
+
+        button.clicked.connect(callback)
+        self.button_layout.addWidget(button)
+        return button
 
     def start_installation(self, path, components):
         # 隐藏左侧图片区域
@@ -914,6 +956,12 @@ class InstallPage(QWidget):
 
     def installation_finished(self, success):
         self.parent.install_success = success
+        if success:
+            self.parent.go_to_page("finish")
+        else:
+            self.next_button.setEnabled(True)
+
+    def on_next(self):
         self.parent.go_to_page("finish")
 
     def toggle_details(self):

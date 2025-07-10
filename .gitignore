@@ -1,6 +1,7 @@
 .venv
 build
 dist
+pack
 main.spec
 items.json
 left.png
