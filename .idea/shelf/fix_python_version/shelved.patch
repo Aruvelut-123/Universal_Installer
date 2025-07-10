@@ -1,0 +1,56 @@
+Index: component_pack/metadata.json
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/component_pack/metadata.json b/items.json
+rename from component_pack/metadata.json
+rename to items.json
+--- a/component_pack/metadata.json	(revision 097ccc0b7fd40541955c9244bc2de77b8778b97b)
++++ b/items.json	(date 1752118791115)
+@@ -7,7 +7,17 @@
+       "id": "main",
+       "desc": "<b>BB+ 汉化包</b>: 主汉化程序，必选组件",
+       "default_path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Baldi's Basics Plus",
+-      "after": null
++      "after": null,
++      "files": [
++        "AutoTranslator.7z",
++        "BBP.7z",
++        "BepInEx.7z"
++      ],
++      "actions": {
++        "BBP.7z": "{install_path}",
++        "BepInEx.7z": "{install_path}",
++        "AutoTranslator.7z": "{install_path}"
++      }
+     },
+     {
+       "name": "其他模组",
+@@ -15,7 +25,9 @@
+       "checked": false,
+       "id": "other_mods",
+       "desc": "<b>其他模组</b>: 可选附加模组",
+-      "after": null
++      "after": null,
++      "files": null,
++      "actions": null
+     },
+     {
+       "name": "模组API (大多数模组的前置)",
+@@ -23,7 +35,13 @@
+       "checked": true,
+       "id": "modding_api",
+       "desc": "<b>模组API</b>: 所有模组运行的基础，安装后可以加载其他汉化模组",
+-      "after": "other_mods"
++      "after": "other_mods",
++      "files": [
++        "BBDevAPI.7z"
++      ],
++      "actions": {
++        "BBDevAPI.7z": "{install_path}"
++      }
+     }
+   ]
+ }
+\ No newline at end of file

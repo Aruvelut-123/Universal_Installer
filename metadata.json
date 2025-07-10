@@ -1,29 +1,23 @@
 {
-  "items": [
-    {
-      "name": "BB+ 汉化包",
-      "required": true,
-      "checked": true,
-      "id": "main",
-      "desc": "<b>BB+ 汉化包</b>: 主汉化程序，必选组件",
-      "default_path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Baldi's Basics Plus",
-      "after": null
-    },
-    {
-      "name": "其他模组",
-      "required": false,
-      "checked": false,
-      "id": "other_mods",
-      "desc": "<b>其他模组</b>: 可选附加模组",
-      "after": null
-    },
-    {
-      "name": "模组API (大多数模组的前置)",
-      "required": true,
-      "checked": true,
-      "id": "modding_api",
-      "desc": "<b>模组API</b>: 所有模组运行的基础，安装后可以加载其他汉化模组",
-      "after": "other_mods"
-    }
-  ]
+  "program_name": "BB+ 汉化模组安装程序",
+  "short_name": "BB+ 汉化包",
+  "version": "1.12 Alpha",
+  "is_release": true,
+  "need_admin": true,
+  "password": "0",
+  "has_uninstaller": true,
+  "main_item": 0,
+  "item_metadata": "items.json",
+  "registry_key_name": "BBPlusSChinese",
+  "uninstall_registry_key_name": "bbpchinese",
+  "author": "Baymaxawa & MEMZSystem32",
+  "footer_info": "作者: Baymaxawa & MEMZSystem32",
+  "license_file": "LICENSE",
+  "left_pic": "left.png",
+  "header_pic": "header.png",
+  "icon": "icon.ico",
+  "qq_group": "873338741",
+  "select_directory_title": "请选择 BALDI.exe 程序所在的文件夹（路径不能有中文！！！）",
+  "select_directory_tip": "Steam 上右键属性点击管理点击浏览本地文件即可找到",
+  "launch_game": "steam://run/1275890"
 }

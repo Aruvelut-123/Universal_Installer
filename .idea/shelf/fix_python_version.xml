@@ -1,0 +1,20 @@
+<changelist name="fix_python_version" date="1752119405939" recycled="false">
+  <option name="PATH" value="$PROJECT_DIR$/.idea/shelf/fix_python_version/shelved.patch" />
+  <option name="DESCRIPTION" value="fix python version" />
+  <binary>
+    <option name="AFTER_PATH" value="AutoTranslator.7z" />
+    <option name="SHELVED_PATH" value="$PROJECT_DIR$/.idea/shelf/fix_python_version/AutoTranslator.7z" />
+  </binary>
+  <binary>
+    <option name="AFTER_PATH" value="BBDevAPI.7z" />
+    <option name="SHELVED_PATH" value="$PROJECT_DIR$/.idea/shelf/fix_python_version/BBDevAPI.7z" />
+  </binary>
+  <binary>
+    <option name="AFTER_PATH" value="BBP.7z" />
+    <option name="SHELVED_PATH" value="$PROJECT_DIR$/.idea/shelf/fix_python_version/BBP.7z" />
+  </binary>
+  <binary>
+    <option name="AFTER_PATH" value="BepInEx.7z" />
+    <option name="SHELVED_PATH" value="$PROJECT_DIR$/.idea/shelf/fix_python_version/BepInEx.7z" />
+  </binary>
+</changelist>

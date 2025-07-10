@@ -2,7 +2,6 @@ import json
 import os
 import sys
 import shutil
-import subprocess
 import winreg
 import ctypes
 from typing import override, Any
@@ -15,25 +14,56 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QPixmap, QIcon, QFont
 from PySide6.QtCore import Qt, QThread, Signal, QSize
-from scripts.regsetup import description
 
-# 全局常量
-PROGRAM_NAME = "BB+汉化模组安装"
-VERSION = "1.12 Alpha"
-IS_RELEASE = True
-PASSWORD = "0"  # 安装密码
-REGISTRY_KEY = r"Software\BBPlusSChinese"
-UNINSTALL_REG_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\bbpchinese"
-WINDOW_SIZE = (640, 480)  # 固定窗口大小
-
-
-def get_metadata():
+def get_installer_metadata() -> dict:
     try:
-        with open("component_pack/metadata.json", "r", encoding='utf-8') as file:
-            return json.load(file)
+        with open("metadata.json", "r", encoding='utf-8') as file:
+            f = json.load(file)
+            if "program_name" in f:
+                if "short_name" in f:
+                    if "version" in f:
+                        if "is_release" in f:
+                            if "password" in f:
+                                if "has_uninstaller" in f:
+                                    if "main_item" in f:
+                                        if "item_metadata" in f:
+                                            if "registry_key_name" in f:
+                                                if "uninstall_registry_key_name" in f:
+                                                    if "footer_info" in f:
+                                                        if "license_file" in f:
+                                                            if "left_pic" in f:
+                                                                if "header_pic" in f:
+                                                                    if "icon" in f:
+                                                                        return f
+            print("Metadata file not complete! continue with risks!")
+            return f
     except Exception as e:
         print(e)
-        return []
+        return {}
+
+# 全局常量
+PROGRAM_NAME : str = get_installer_metadata()["program_name"]
+VERSION : str = get_installer_metadata()["version"]
+IS_RELEASE : bool = get_installer_metadata()["is_release"]
+PASSWORD : str = get_installer_metadata()["password"]
+REGISTRY_KEY : str = "Software\\"+get_installer_metadata()["registry_key_name"]
+UNINSTALL_REG_KEY : str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"+get_installer_metadata()["uninstall_registry_key_name"]
+WINDOW_SIZE = (640, 480)  # 固定窗口大小
+METADATA_PATH : str = get_installer_metadata()["item_metadata"]
+MAIN_ITEM : int = get_installer_metadata()["main_item"]
+metadata : dict = {}
+
+def get_metadata() -> dict:
+    global metadata
+    if metadata != {}:
+        return metadata
+    try:
+        with open(METADATA_PATH, "r", encoding='utf-8') as file:
+            metadata = json.load(file)
+            return metadata
+    except Exception as e:
+        print(e)
+        return {}
 
 # 检查管理员权限的函数
 def is_admin():
@@ -41,7 +71,6 @@ def is_admin():
         return ctypes.windll.shell32.IsUserAnAdmin()
     except:
         return False
-
 
 # 安装线程
 class InstallThread(QThread):
@@ -59,74 +88,102 @@ class InstallThread(QThread):
             # 0. 准备工作
             self.progress_updated.emit(5, "正在准备安装环境...")
             if not os.path.exists(self.path):
-                os.makedirs(self.path)
+                os.makedirs(self.path, exist_ok=True)
 
             # 1. 复制文件到临时目录
             self.progress_updated.emit(10, "正在复制安装文件...")
             temp_dir = os.path.join(self.path, "__temp_install")
             if not os.path.exists(temp_dir):
-                os.makedirs(temp_dir)
+                os.makedirs(temp_dir, exist_ok=True)
 
-            files_to_copy = [
-                "BBP.7z", "AutoTranslator.7z", "BepInEx.7z",
-                "icon.ico", "readme.txt", "7z.exe", "7z.dll"
-            ]
+            files_to_copy = []
+
+            for component in self.components:
+                if self.components[component]:
+                    for item in get_metadata()["items"]:
+                        if item["id"] == component:
+                            for file in item["files"]:
+                                files_to_copy.append(file)
+                            break
+
             for file in files_to_copy:
                 shutil.copy(file, temp_dir)
                 self.progress_updated.emit(10, f"复制文件: {file}")
 
-            # 2. 安装主程序文件
-            self.progress_updated.emit(20, "正在安装主程序文件...")
-            os.chdir(temp_dir)
+            # 2. 安装组件
+            progress = 10
+            step = 80 / len(self.components)
+            for component in self.components:
+                if self.components[component]:
+                    self.progress_updated.emit(progress + step, "正在安装组件"+component+"...")
+                    progress += step
+                    os.chdir(temp_dir)
+                    for item in get_metadata()["items"]:
+                        if item["id"] == component:
+                            for file in item["files"]:
+                                in_path : str = ""
+                                file_type = ""
+                                result = file.split(".")
+                                if file in item["actions"]:
+                                    in_path = item["actions"][file]
+                                    in_path = in_path.replace("{install_path}", self.path)
+                                else:
+                                    continue
+                                match result[1]:
+                                    case "zip":
+                                        file_type = "zip"
+                                    case "rar":
+                                        file_type = "rar"
+                                    case "7z":
+                                        file_type = "7z"
+                                    case "tar":
+                                        file_type = "tar.gz"
+                                    case _:
+                                        continue
+                                self.run_extract(file, file_type, in_path)
 
-            self.run_extract("BBP.7z")
-            self.run_extract("AutoTranslator.7z")
-            self.run_extract("BepInEx.7z")
-
-            # 3. 安装可选组件
-            if self.components.get("modding_api", False):
-                self.progress_updated.emit(70, "正在安装模组API...")
-                shutil.copy("BBDevAPI.7z", temp_dir)
-                self.run_extract("BBDevAPI.7z")
-
-            # 4. 移动文件到安装目录
-            self.progress_updated.emit(85, "正在移动文件到目标位置...")
-            for item in os.listdir(temp_dir):
-                src = os.path.join(temp_dir, item)
-                if os.path.isdir(src):
-                    dest = os.path.join(self.path, item)
-                    if os.path.exists(dest):
-                        shutil.rmtree(dest)
-                    shutil.copytree(src, dest)
-                else:
-                    if item not in ["7z.exe", "7z.dll"]:
-                        shutil.copy(src, self.path)
-
-            # 5. 清理临时文件
+            # 3. 清理临时文件
             self.progress_updated.emit(90, "正在清理临时文件...")
             shutil.rmtree(temp_dir)
 
-            # 6. 注册表操作
-            self.progress_updated.emit(95, "正在更新系统设置...")
-            self.create_registry_entries()
+            # 4. 注册表操作
+            #self.progress_updated.emit(95, "正在更新系统设置...")
+            #self.create_registry_entries()
 
             self.success = True
             self.progress_updated.emit(100, "安装完成！")
         except Exception as e:
+            print(e)
             self.progress_updated.emit(0, f"安装失败: {str(e)}")
         finally:
             self.finished.emit(self.success)
 
-    def run_extract(self, archive_name):
-        result = subprocess.run(
-            ["7z.exe", "x", archive_name, "-y"],
-            capture_output=True, text=True
-        )
-        if result.returncode == 0:
+    def run_extract(self, archive_name, archive_type, in_path):
+        try:
+            match archive_type:
+                case "zip":
+                    import zipfile
+                    with zipfile.ZipFile(archive_name, "r") as archive:
+                        archive.extractall(in_path)
+                case "rar":
+                    import rarfile
+                    with rarfile.RarFile(archive_name, "r") as archive:
+                        archive.extractall(in_path)
+                case "7z":
+                    import py7zr
+                    with py7zr.SevenZipFile(archive_name, "r") as archive:
+                        archive.extractall(in_path)
+                case "tar":
+                    import tarfile
+                    with tarfile.TarFile(archive_name, "r") as archive:
+                        archive.extractall(in_path)
+                case _:
+                    return
             self.progress_updated.emit(0, f"解压成功: {archive_name}")
             os.remove(archive_name)
-        else:
-            raise Exception(f"解压失败: {archive_name}\n{result.stderr}")
+        except Exception as e:
+            print(e)
+            raise e
 
     def create_registry_entries(self):
         # 创建安装信息注册表项
@@ -171,6 +228,16 @@ class BasePage(QWidget):
         window_size.setHeight(WINDOW_SIZE[1])
         self.setFixedSize(window_size)
 
+        try:
+            open(get_installer_metadata()["left_pic"]).close()
+        except:
+            has_left_area = False
+
+        try:
+            open(get_installer_metadata()["header_pic"]).close()
+        except:
+            has_banner = False
+
         if has_banner:
             # 根布局 - 纵向布局
             self.root_layout = QVBoxLayout(self)
@@ -194,7 +261,7 @@ class BasePage(QWidget):
 
             # 加载卡通图片
             self.character_label = QLabel()
-            pixmap = QPixmap("left.png")
+            pixmap = QPixmap(get_installer_metadata()["left_pic"])
             if not pixmap.isNull():
                 self.character_label.setPixmap(pixmap.scaled(170, 340, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
             self.character_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -213,7 +280,7 @@ class BasePage(QWidget):
 
             # banner
             self.header = QLabel()
-            pixmap = QPixmap("header.png")
+            pixmap = QPixmap(get_installer_metadata()["header_pic"])
             if not pixmap.isNull():
                 self.header.setPixmap(
                     pixmap.scaled(150, 57, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation))
@@ -252,7 +319,7 @@ class BasePage(QWidget):
         self.button_layout.addStretch(1)
 
         # 底部信息
-        self.footer_label = QLabel("作者: Baymaxawa & MEMZSystem32")
+        self.footer_label = QLabel(get_installer_metadata()["footer_info"])
         footer_font = QFont("Microsoft YaHei UI", 8)
         self.footer_label.setFont(footer_font)
         self.footer_label.setStyleSheet("color: #666666;")
@@ -329,14 +396,12 @@ class WelcomePage(BasePage):
 
     def setup_ui(self):
         self.title_label.setText(PROGRAM_NAME)
-        self.subtitle_label.setText("感谢您选择BB+汉化包")
+        self.subtitle_label.setText("感谢您选择 "+get_installer_metadata()["short_name"])
 
         # 添加内容
-        content_text = (
-            "此汉化包主要由 Baymaxawa 和 MEMZSystem32 制作\n\n"
-            "如有疑问可加群：873338741\n\n"
-            "点击[下一步(N)]继续。"
-        )
+        content_text = get_installer_metadata()["short_name"]+"主要由 "+get_installer_metadata()["author"]+" 制作\n\n"
+        if "qq_group" in get_installer_metadata(): content_text += "如有疑问可加群："+get_installer_metadata()["qq_group"]+"\n\n"
+        content_text += "点击[下一步(N)]继续。"
 
         content_label = QLabel(content_text)
         content_label.setFont(QFont("Microsoft YaHei UI", 9))
@@ -355,7 +420,7 @@ class WelcomePage(BasePage):
         self.parent.cancel_installation()
 
     def on_next(self):
-        self.default_path = get_metadata()["items"][0]["default_path"]
+        self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path"]
         # 尝试从注册表读取之前保存的安装路径
         try:
             key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, REGISTRY_KEY)
@@ -378,7 +443,7 @@ class WelcomePage(BasePage):
 class LicensePage(BasePage):
     def setup_ui(self):
         self.title_label.setText(PROGRAM_NAME)
-        self.subtitle_label.setText("在安装BB+汉化模组之前，请阅读许可证条款")
+        self.subtitle_label.setText("在安装 "+get_installer_metadata()["short_name"]+" 之前，请阅读许可证条款")
 
         # 创建许可证文本框
         license_group = QGroupBox("许可证协议")
@@ -388,10 +453,10 @@ class LicensePage(BasePage):
         self.license_text = QTextEdit()
         self.license_text.setReadOnly(True)
         try:
-            with open("LICENSE", "r", encoding="utf-8") as f:
+            with open(get_installer_metadata()["license_file"], "r", encoding="utf-8") as f:
                 self.license_text.setText(f.read())
         except:
-            self.license_text.setText("许可协议文件未找到。")
+            self.license_text.setText("许可协议文件未找到。\n一般意味着此工具为 All Rights Reserved 协议。")
 
         # 添加提示文本
         tip_label = QLabel("要阅读协议的其余部分，请使用滚动条浏览。")
@@ -439,9 +504,10 @@ class PasswordPage(BasePage):
         password_group = QGroupBox("密码输入框")
         password_layout = QVBoxLayout(password_group)
 
-        # 添加提示文本
-        tip_label = QLabel("请加群873338741获取密码！")
-        tip_label.setStyleSheet("font-size: 9pt; color: #4BA348; font-weight: bold;")
+        if "qq_group" in get_installer_metadata():
+            # 添加提示文本
+            tip_label = QLabel("请加群 "+get_installer_metadata()["qq_group"]+" 获取密码！")
+            tip_label.setStyleSheet("font-size: 9pt; color: #4BA348; font-weight: bold;")
 
         # 密码输入框
         password_form = QHBoxLayout()
@@ -480,7 +546,7 @@ class PasswordPage(BasePage):
 class ComponentsPage(BasePage):
     def setup_ui(self):
         self.title_label.setText(PROGRAM_NAME)
-        self.subtitle_label.setText("选择你想安装的BB+汉化模组功能组件")
+        self.subtitle_label.setText("选择你想安装的 "+get_installer_metadata()["short_name"]+" 功能组件")
 
         # 创建组件选择区
         components_group = QGroupBox()
@@ -504,7 +570,7 @@ class ComponentsPage(BasePage):
 
         metadata = get_metadata()
         for item in metadata["items"]:
-            if item["after"] != None:
+            if item["after"] is not None:
                 main_item = QTreeWidgetItem()
             else:
                 main_item = QTreeWidgetItem(self.components_list)
@@ -516,10 +582,8 @@ class ComponentsPage(BasePage):
             if item["checked"]: main_item.setCheckState(0, Qt.CheckState.Checked)
             else: main_item.setCheckState(0, Qt.CheckState.Unchecked)
             main_item.setData(0, Qt.ItemDataRole.UserRole, item["id"])
-            print(item["after"])
-            if item["after"] != None:
+            if item["after"] is not None:
                 for item2 in metadata["items"]:
-                    print(item2)
                     if item2["id"] == item["after"]:
                         self.components_list.findItems(item2["name"], Qt.MatchFlag.MatchContains, 0)[0].addChild(main_item)
                         break
@@ -646,15 +710,19 @@ class ComponentsPage(BasePage):
 class DirectoryPage(BasePage):
     def setup_ui(self):
         self.title_label.setText(PROGRAM_NAME)
-        self.subtitle_label.setText("选择 BALDI.exe 程序所在的文件夹（路径不能有中文！！！）")
+        self.subtitle_label.setText("请选择安装路径")
+        if "select_directory_title" in get_installer_metadata():
+            self.subtitle_label.setText(get_installer_metadata()["select_directory_title"])
 
         # 添加路径选择区域
         path_group = QGroupBox()
         path_layout = QVBoxLayout(path_group)
 
-        # 添加提示文本
-        tip_label = QLabel("Steam 上右键属性点击管理点击浏览本地文件即可")
-        tip_label.setStyleSheet("font-size: 9pt; color: #4BA348; margin-bottom: 10px;")
+        if "select_directory_tip" in get_installer_metadata():
+            # 添加提示文本
+            tip_label = QLabel(get_installer_metadata()["select_directory_tip"])
+            tip_label.setStyleSheet("font-size: 9pt; color: #4BA348; margin-bottom: 10px;")
+            path_layout.addWidget(tip_label)
 
         # 路径选择框
         path_form = QHBoxLayout()
@@ -679,7 +747,6 @@ class DirectoryPage(BasePage):
         self.space_layout.addWidget(self.required_label)
         self.space_layout.addWidget(self.available_label)
 
-        path_layout.addWidget(tip_label)
         path_layout.addLayout(path_form)
         path_layout.addLayout(self.space_layout)
 
@@ -734,15 +801,6 @@ class DirectoryPage(BasePage):
             QMessageBox.warning(self, "路径错误", "安装路径不能包含中文字符！")
             return
 
-        if not os.path.exists(os.path.join(path, "BALDI.exe")):
-            reply = QMessageBox.question(
-                self, "确认路径",
-                "未在选定目录中找到BALDI.exe，是否继续安装？",
-                QMessageBox.Yes | QMessageBox.No
-            )
-            if reply == QMessageBox.No:
-                return
-
         self.parent.install_path = path
         self.parent.go_to_page("install")
 
@@ -762,14 +820,14 @@ class InstallPage(QWidget):
         main_layout.setContentsMargins(20, 20, 20, 20)
 
         # 标题
-        title_label = QLabel("BB+汉化模组安装")
+        title_label = QLabel(get_installer_metadata()["short_name"]+"安装")
         title_font = QFont("Microsoft YaHei UI", 12, QFont.Bold)
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title_label)
 
         # 副标题
-        subtitle_label = QLabel("BB+汉化模组正在安装，请稍候...")
+        subtitle_label = QLabel("正在安装 "+get_installer_metadata()["short_name"]+" ，请稍候...")
         subtitle_label.setFont(QFont("Microsoft YaHei UI", 10))
         subtitle_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(subtitle_label)
@@ -809,7 +867,7 @@ class InstallPage(QWidget):
         button_layout.addStretch(1)
 
         # 显示详情按钮
-        self.details_button = QPushButton("显示详情(D)")
+        self.details_button = QPushButton("隐藏详情(D)")
         self.details_button.setFont(QFont("Microsoft YaHei UI", 9))
         self.details_button.setStyleSheet("""
             QPushButton {
@@ -826,7 +884,7 @@ class InstallPage(QWidget):
         main_layout.addLayout(button_layout)
 
         # 底部信息
-        footer_label = QLabel("作者: Baymaxawa和MEMZSystem32")
+        footer_label = QLabel(get_installer_metadata()["footer_info"])
         footer_label.setFont(QFont("Microsoft YaHei UI", 8))
         footer_label.setStyleSheet("color: #666666;")
         footer_label.setAlignment(Qt.AlignCenter)
@@ -837,8 +895,7 @@ class InstallPage(QWidget):
 
     def start_installation(self, path, components):
         # 隐藏左侧图片区域
-        self.parent.left_frame.hide()
-        self.parent.right_frame.setFixedWidth(self.width())
+        #self.parent.right_frame.setFixedWidth(self.width())
 
         self.log_area.clear()
         self.log_area.append("开始安装...")
@@ -872,10 +929,10 @@ class InstallPage(QWidget):
 class FinishPage(BasePage):
     def setup_ui(self):
         self.title_label.setText(PROGRAM_NAME)
-        self.subtitle_label.setText("安装程序结束")
+        self.subtitle_label.setText("安装完成!")
 
         # 添加结果消息
-        self.result_label = QLabel("BB+汉化模组已经成功安装到本机。")
+        self.result_label = QLabel(get_installer_metadata()["short_name"]+" 已经成功安装到本机。")
         self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #4BA348;")
         self.result_label.setAlignment(Qt.AlignCenter)
 
@@ -883,38 +940,23 @@ class FinishPage(BasePage):
         tip_label = QLabel("点击[完成(F)]关闭安装程序。")
         tip_label.setAlignment(Qt.AlignCenter)
 
-        # 启动游戏选项
-        self.launch_checkbox = QCheckBox("完成后启动游戏")
-        self.launch_checkbox.setChecked(True)
-        self.launch_checkbox.setStyleSheet("font-size: 9pt;")
-
         self.content_layout.addStretch(1)
         self.content_layout.addWidget(self.result_label)
         self.content_layout.addWidget(tip_label)
-        self.content_layout.addSpacing(15)
-        self.content_layout.addWidget(self.launch_checkbox)
-        self.content_layout.addStretch(2)
 
         # 添加按钮
-        self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("install"))
         self.finish_button = self.add_button("完成(F)", self.on_finish, "primary")
         self.add_button("取消(C)", self.on_cancel)
 
     def set_result(self, success):
         if success:
-            self.result_label.setText("BB+汉化模组已经成功安装到本机。")
+            self.result_label.setText(get_installer_metadata()["short_name"]+" 已经成功安装到本机。")
             self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #4BA348;")
-            self.launch_checkbox.setEnabled(True)
         else:
             self.result_label.setText("安装失败，请检查错误信息后重试。")
             self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #FF0000;")
-            self.launch_checkbox.setEnabled(False)
 
     def on_finish(self):
-        if self.parent.install_success and self.launch_checkbox.isChecked():
-            # 启动游戏
-            steam_uri = "steam://run/1275890"
-            os.startfile(steam_uri)
         self.parent.close()
 
     def on_cancel(self):
@@ -930,14 +972,15 @@ class InstallerWindow(QMainWindow):
         self.setWindowIcon(QIcon("icon.ico"))
 
         metadata = get_metadata()
-        print(metadata)
         if metadata != []:
             self.default_path = metadata["items"][0]["default_path"]
 
-        # 检查管理员权限
-        #if not is_admin():
-        #    ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, __file__, None, 1)
-        #    sys.exit(0)
+        if "need_admin" in get_installer_metadata():
+            if get_installer_metadata()["need_admin"]:
+                # 检查管理员权限
+                if not is_admin():
+                   ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, __file__, None, 1)
+                   sys.exit(0)
 
         # 创建堆栈窗口
         self.stacked_widget = QStackedWidget()
@@ -990,7 +1033,7 @@ class InstallerWindow(QMainWindow):
     def cancel_installation(self):
         reply = QMessageBox.question(
             self, '退出安装',
-            "您确定要退出BB+汉化模组安装吗?",
+            "您确定要退出 "+PROGRAM_NAME+" 吗?",
             QMessageBox.Yes | QMessageBox.No, QMessageBox.No
         )
         if reply == QMessageBox.Yes:
