@@ -7,8 +7,5 @@ items.json
 left.png
 header.png
 icon.ico
-BepInEx.7z
-BBDevAPI.7z
-BBP.7z
-AutoTranslator.7z
+*.7z
 build.bat
