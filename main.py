@@ -1,5 +1,6 @@
 import json
 import os
+import platform
 import sys
 import shutil
 import time
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QPixmap, QIcon, QFont
 from PySide6.QtCore import Qt, QThread, Signal, QSize
+
 
 def get_installer_metadata() -> dict:
     try:
@@ -134,6 +136,7 @@ class InstallThread(QThread):
                                     if file in item["actions"]:
                                         in_path = item["actions"][file]
                                         in_path = in_path.replace("{install_path}", self.path)
+                                        in_path = in_path.replace("/", "\\")
                                     else:
                                         continue
                                     match result[1]:
@@ -145,10 +148,63 @@ class InstallThread(QThread):
                                             file_type = "7z"
                                         case "tar":
                                             file_type = "tar.gz"
+                                        case "txt":
+                                            shutil.copy(file, in_path)
+                                            continue
                                         case _:
                                             continue
                                     self.run_extract(file, file_type, in_path)
-
+                            if "x64file" in item or "x86file" in item:
+                                if platform.machine() == "AMD64":
+                                    if "x64file" in item:
+                                        for file in item["x64file"]:
+                                            file = file.replace("/", "\\")
+                                            in_path: str = ""
+                                            file_type = ""
+                                            result = file.split(".")
+                                            if file in item["actions"]:
+                                                in_path = item["actions"][file]
+                                                in_path = in_path.replace("{install_path}", self.path)
+                                                in_path = in_path.replace("/", "\\")
+                                            else:
+                                                continue
+                                            match result[1]:
+                                                case "zip":
+                                                    file_type = "zip"
+                                                case "rar":
+                                                    file_type = "rar"
+                                                case "7z":
+                                                    file_type = "7z"
+                                                case "tar":
+                                                    file_type = "tar.gz"
+                                                case _:
+                                                    continue
+                                            self.run_extract(file, file_type, in_path)
+                                elif platform.machine() == "x86":
+                                    if "x86file" in item:
+                                        for file in item["x86file"]:
+                                            file = file.replace("/", "\\")
+                                            in_path: str = ""
+                                            file_type = ""
+                                            result = file.split(".")
+                                            if file in item["actions"]:
+                                                in_path = item["actions"][file]
+                                                in_path = in_path.replace("{install_path}", self.path)
+                                                in_path = in_path.replace("/", "\\")
+                                            else:
+                                                continue
+                                            match result[1]:
+                                                case "zip":
+                                                    file_type = "zip"
+                                                case "rar":
+                                                    file_type = "rar"
+                                                case "7z":
+                                                    file_type = "7z"
+                                                case "tar":
+                                                    file_type = "tar.gz"
+                                                case _:
+                                                    continue
+                                            self.run_extract(file, file_type, in_path)
             time.sleep(2)
             # 3. 清理临时文件
             self.progress_updated.emit(90, "正在清理临时文件...")
@@ -563,16 +619,50 @@ class ComponentsPage(BasePage):
 
         metadata = get_metadata()
         for item in metadata["items"]:
+            file_not_found = False
             if item["after"] is not None:
                 main_item = QTreeWidgetItem()
             else:
                 main_item = QTreeWidgetItem(self.components_list)
             main_item.setFlags(main_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            if item["files"] is not None:
+                for file in item["files"]:
+                    path = file.replace("/", "\\")
+                    path = ".\\" + path
+                    if not os.path.exists(file):
+                        file_not_found = True
+                        break
+            if "x86file" in item:
+                for file in item["x86file"]:
+                    if not os.path.exists(file):
+                        file_not_found = True
+                        break
+            if "x64file" in item:
+                for file in item["x64file"]:
+                    if not os.path.exists(file):
+                        file_not_found = True
+                        break
+
             if item["required"]:
-                main_item.setText(0, item["name"]+" (必选)")
+                if file_not_found:
+                    main_item.setText(0, item["name"]+" (未找到对应文件)")
+                else:
+                    main_item.setText(0, item["name"] + " (必选)")
                 main_item.setFlags(main_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
-            else: main_item.setText(0, item["name"])
-            if item["checked"]: main_item.setCheckState(0, Qt.CheckState.Checked)
+            else:
+                if file_not_found:
+                    main_item.setText(0, item["name"] + " (未找到对应文件)")
+                    main_item.setFlags(main_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                else:
+                    main_item.setText(0, item["name"])
+            if item["checked"]:
+                if "part_checked" in item:
+                    if item["part_checked"]:
+                        main_item.setCheckState(0, Qt.CheckState.PartiallyChecked)
+                    else:
+                        main_item.setCheckState(0, Qt.CheckState.Checked)
+                else:
+                    main_item.setCheckState(0, Qt.CheckState.Checked)
             else: main_item.setCheckState(0, Qt.CheckState.Unchecked)
             main_item.setData(0, Qt.ItemDataRole.UserRole, item["id"])
             if item["after"] is not None:
@@ -669,7 +759,39 @@ class ComponentsPage(BasePage):
             # 重新连接信号
             self.components_list.itemChanged.connect(self.on_item_changed)
 
+    def find_component_by_id(self, component_id):
+        # 递归搜索QTreeWidget中匹配ID的项目
+        def search(item):
+            if item.data(0, Qt.ItemDataRole.UserRole) == component_id:
+                return item
+            for i in range(item.childCount()):
+                result = search(item.child(i))
+                if result:
+                    return result
+            return None
+
+        for i in range(self.components_list.topLevelItemCount()):
+            result = search(self.components_list.topLevelItem(i))
+            if result:
+                return result
+        return None
+
     def on_item_changed(self, item, column):
+        component_key = item.data(0, Qt.ItemDataRole.UserRole)
+
+        # 仅当项目被选中时处理依赖
+        if item.checkState(0) == Qt.CheckState.Checked:
+            for items in metadata["items"]:
+                if items["id"] == component_key:
+                    # 获取组件的依赖项列表（假设component_key中有dependencies字段）
+                    dependencies = items.get('dependencies', [])
+                    for dependency_id in dependencies:
+                        # 在当前树中查找依赖项（需要实现find_component_by_id方法）
+                        dep_item = self.find_component_by_id(dependency_id)
+                        if dep_item and dep_item.checkState(0) != Qt.CheckState.Checked:
+                            dep_item.setCheckState(0, Qt.CheckState.Checked)
+                    break
+
         # 当项目状态改变时调用
         if item.parent() is not None:
             # 如果这是子项目，更新父项目的状态

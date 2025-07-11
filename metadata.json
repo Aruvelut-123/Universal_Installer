@@ -3,7 +3,7 @@
   "short_name": "BB+ 汉化包",
   "version": "1.12 Alpha",
   "is_release": true,
-  "need_admin": true,
+  "need_admin": false,
   "password": "0",
   "has_uninstaller": true,
   "main_item": 0,
