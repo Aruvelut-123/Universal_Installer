@@ -12,7 +12,7 @@ cls
 echo start build exe file
 echo Continue?
 pause > nul
-pyinstaller -y --onefile --windowed -i pack/icon.ico main.py
+pyinstaller -y --debug all --onefile --windowed -i pack/icon.ico main.py
 if "%errorlevel%" neq "0" (
     echo Error when running this section!
     pause

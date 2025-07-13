@@ -6,6 +6,10 @@ import shutil
 import time
 import winreg
 import ctypes
+import zipfile
+import rarfile
+import py7zr
+import tarfile
 from typing import override, Any
 
 from PySide6.QtWidgets import (
@@ -16,9 +20,13 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QPixmap, QIcon, QFont
 from PySide6.QtCore import Qt, QThread, Signal, QSize
-
+metadata : dict = {}
+installer_metadata : dict = {}
 
 def get_installer_metadata() -> dict:
+    global installer_metadata
+    if installer_metadata != {}:
+        return installer_metadata
     try:
         with open("metadata.json", "r", encoding='utf-8') as file:
             f = json.load(file)
@@ -37,9 +45,24 @@ def get_installer_metadata() -> dict:
                                                             if "left_pic" in f:
                                                                 if "header_pic" in f:
                                                                     if "icon" in f:
+                                                                        installer_metadata = f
                                                                         return f
             print("Metadata file not complete! continue with risks!")
+            installer_metadata = f
             return f
+    except Exception as e:
+        print(e)
+        installer_metadata = {}
+        return {}
+
+def get_metadata() -> dict:
+    global metadata
+    if metadata != {}:
+        return metadata
+    try:
+        with open(METADATA_PATH, "r", encoding='utf-8') as file:
+            metadata = json.load(file)
+            return metadata
     except Exception as e:
         print(e)
         return {}
@@ -54,19 +77,6 @@ UNINSTALL_REG_KEY : str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninsta
 WINDOW_SIZE = (640, 480)  # 固定窗口大小
 METADATA_PATH : str = get_installer_metadata()["item_metadata"]
 MAIN_ITEM : int = get_installer_metadata()["main_item"]
-metadata : dict = {}
-
-def get_metadata() -> dict:
-    global metadata
-    if metadata != {}:
-        return metadata
-    try:
-        with open(METADATA_PATH, "r", encoding='utf-8') as file:
-            metadata = json.load(file)
-            return metadata
-    except Exception as e:
-        print(e)
-        return {}
 
 # 检查管理员权限的函数
 def is_admin():
@@ -94,42 +104,15 @@ class InstallThread(QThread):
                 os.makedirs(self.path, exist_ok=True)
 
             time.sleep(2)
-            # 1. 复制文件到临时目录
-            self.progress_updated.emit(10, "正在复制安装文件...")
-            temp_dir = os.path.join(self.path, "__temp_install")
-            if not os.path.exists(temp_dir):
-                os.makedirs(temp_dir, exist_ok=True)
-
-            files_to_copy = []
-
-            for component in self.components:
-                if self.components[component]:
-                    for item in get_metadata()["items"]:
-                        if item["id"] == component:
-                            if item["files"] is not None:
-                                for file in item["files"]:
-                                    files_to_copy.append(file)
-                                break
-
-            for file in files_to_copy:
-                file = file.replace("/", "\\")
-                shutil.copy(file, temp_dir)
-                self.progress_updated.emit(10, f"复制文件: {file}")
-
-            time.sleep(2)
             # 2. 安装组件
-            progress = 10
-            step = 80 / len(self.components)
+            step = 85 / len(self.components)
             for component in self.components:
                 if self.components[component]:
-                    self.progress_updated.emit(progress + step, "正在安装组件"+component+"...")
-                    progress += step
-                    os.chdir(temp_dir)
+                    self.progress_updated.emit(step, "正在安装组件"+component+"...")
                     for item in get_metadata()["items"]:
                         if item["id"] == component:
                             if item["files"] is not None:
                                 for file in item["files"]:
-                                    file = file.replace("/", "\\")
                                     in_path : str = ""
                                     file_type = ""
                                     result = file.split(".")
@@ -153,6 +136,7 @@ class InstallThread(QThread):
                                             continue
                                         case _:
                                             continue
+                                    file = file.replace("/", "\\")
                                     self.run_extract(file, file_type, in_path)
                             if "x64file" in item or "x86file" in item:
                                 if platform.machine() == "AMD64":
@@ -206,13 +190,9 @@ class InstallThread(QThread):
                                                     continue
                                             self.run_extract(file, file_type, in_path)
             time.sleep(2)
-            # 3. 清理临时文件
-            self.progress_updated.emit(90, "正在清理临时文件...")
-            shutil.rmtree(temp_dir, ignore_errors=True)
 
-            time.sleep(2)
             # 4. 注册表操作
-            self.progress_updated.emit(95, "正在更新系统设置...")
+            self.progress_updated.emit(90, "正在更新系统设置...")
             self.create_registry_entries()
 
             self.success = True
@@ -224,28 +204,25 @@ class InstallThread(QThread):
             self.finished.emit(self.success)
 
     def run_extract(self, archive_name, archive_type, in_path):
+        self.progress_updated.emit(0, "正在解压文件" + archive_name + "...")
         try:
             match archive_type:
                 case "zip":
-                    import zipfile
                     with zipfile.ZipFile(archive_name, "r") as archive:
                         archive.extractall(in_path)
                 case "rar":
-                    import rarfile
                     with rarfile.RarFile(archive_name, "r") as archive:
                         archive.extractall(in_path)
                 case "7z":
-                    import py7zr
+
                     with py7zr.SevenZipFile(archive_name, "r") as archive:
                         archive.extractall(in_path)
                 case "tar":
-                    import tarfile
                     with tarfile.TarFile(archive_name, "r") as archive:
                         archive.extractall(in_path)
                 case _:
                     return
             self.progress_updated.emit(0, f"解压成功: {archive_name}")
-            os.remove(archive_name)
         except Exception as e:
             print(e)
             raise e
