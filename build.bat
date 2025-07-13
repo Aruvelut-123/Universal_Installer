@@ -22,6 +22,7 @@ cls
 echo change work directory
 echo Continue?
 pause > nul
+copy metadata.json dist\metadata.json /Y
 cd pack
 if "%errorlevel%" neq "0" (
     echo Error when running this section!
