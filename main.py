@@ -105,7 +105,7 @@ class InstallThread(QThread):
 
             time.sleep(2)
             # 2. 安装组件
-            step = 85 / len(self.components)
+            step = 95 / len(self.components)
             for component in self.components:
                 if self.components[component]:
                     self.progress_updated.emit(step, "正在安装组件"+component+"...")
@@ -142,7 +142,6 @@ class InstallThread(QThread):
                                 if platform.machine() == "AMD64":
                                     if "x64file" in item:
                                         for file in item["x64file"]:
-                                            file = file.replace("/", "\\")
                                             in_path: str = ""
                                             file_type = ""
                                             result = file.split(".")
@@ -163,11 +162,11 @@ class InstallThread(QThread):
                                                     file_type = "tar.gz"
                                                 case _:
                                                     continue
+                                            file = file.replace("/", "\\")
                                             self.run_extract(file, file_type, in_path)
                                 elif platform.machine() == "x86":
                                     if "x86file" in item:
                                         for file in item["x86file"]:
-                                            file = file.replace("/", "\\")
                                             in_path: str = ""
                                             file_type = ""
                                             result = file.split(".")
@@ -188,12 +187,13 @@ class InstallThread(QThread):
                                                     file_type = "tar.gz"
                                                 case _:
                                                     continue
+                                            file = file.replace("/", "\\")
                                             self.run_extract(file, file_type, in_path)
             time.sleep(2)
 
-            # 4. 注册表操作
-            self.progress_updated.emit(90, "正在更新系统设置...")
-            self.create_registry_entries()
+            ## 4. 注册表操作
+            #self.progress_updated.emit(90, "正在更新系统设置...")
+            #self.create_registry_entries()
 
             self.success = True
             self.progress_updated.emit(100, "安装完成！")
@@ -570,6 +570,8 @@ class PasswordPage(BasePage):
 
 # 组件选择页面
 class ComponentsPage(BasePage):
+    on_select_change_size = Signal(int)
+
     def setup_ui(self):
         self.title_label.setText(PROGRAM_NAME)
         self.subtitle_label.setText("选择你想安装的 "+get_installer_metadata()["short_name"]+" 功能组件")
@@ -649,12 +651,12 @@ class ComponentsPage(BasePage):
                         break
 
         # 空间信息
-        space_label = QLabel("所需空间: 0 MB")
-        space_label.setStyleSheet("font-size: 9pt; font-weight: bold; margin-top: 10px;")
+        self.space_label = QLabel("所需空间: 0 MB")
+        self.space_label.setStyleSheet("font-size: 9pt; font-weight: bold; margin-top: 10px;")
 
         left_layout.addWidget(tip_label)
         left_layout.addWidget(self.components_list)
-        left_layout.addWidget(space_label)
+        left_layout.addWidget(self.space_label)
 
         # 右侧 - 组件描述
         right_widget = QWidget()
@@ -682,6 +684,28 @@ class ComponentsPage(BasePage):
             back_btn = self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("password"))
         self.next_button = self.add_button("下一步(N)", self.on_next, "primary")
         self.add_button("取消(C)", self.on_cancel)
+        self.on_select_change_size.connect(self.on_select_change_size_method)
+        self.on_select_change_size.emit(self.get_selected_components_sizes())
+
+    def on_select_change_size_method(self, size:int):
+        text = "所需空间："
+        KB = 1000  # Use 1024 for binary sizes
+        MB = 1000 * 1000
+        GB = 1000 * 1000 * 1000
+        TB = 1000 * 1000 * 1000 * 1000
+
+        if size < KB:
+            text += f"{size} B"
+        elif size < MB:
+            text += f"{size / KB:.2f} KB"
+        elif size < GB:
+            text += f"{size / MB:.2f} MB"
+        elif size < TB:
+            text += f"{size / GB:.2f} GB"
+        else:
+            text += f"{size / TB:.2f} TB"
+
+        self.space_label.setText(text)
 
     def on_next(self):
         # 保存选择的组件
@@ -735,6 +759,100 @@ class ComponentsPage(BasePage):
 
             # 重新连接信号
             self.components_list.itemChanged.connect(self.on_item_changed)
+        self.on_select_change_size.emit(self.get_selected_components_sizes())
+
+    def get_selected_components_sizes(self):
+        size = 0
+        for item in get_metadata()["items"]:
+            for component in self.find_items_recursive(self.components_list, item["name"]):
+                if component.checkState(0) == Qt.CheckState.Checked:
+                    for item in get_metadata()["items"]:
+                        if item["id"] == component.data(0, Qt.ItemDataRole.UserRole):
+                            if item["files"] is not None:
+                                for file in item["files"]:
+                                    file_type = ""
+                                    result = file.split(".")
+                                    match result[1]:
+                                        case "zip":
+                                            file_type = "zip"
+                                        case "rar":
+                                            file_type = "rar"
+                                        case "7z":
+                                            file_type = "7z"
+                                        case "tar":
+                                            file_type = "tar.gz"
+                                        case _:
+                                            continue
+                                    file = file.replace("/", "\\")
+                                    size += self.get_archive_size(file, file_type)
+                            if "x64file" in item or "x86file" in item:
+                                if platform.machine() == "AMD64":
+                                    if "x64file" in item:
+                                        for file in item["x64file"]:
+                                            file_type = ""
+                                            result = file.split(".")
+                                            match result[1]:
+                                                case "zip":
+                                                    file_type = "zip"
+                                                case "rar":
+                                                    file_type = "rar"
+                                                case "7z":
+                                                    file_type = "7z"
+                                                case "tar":
+                                                    file_type = "tar.gz"
+                                                case _:
+                                                    continue
+                                            file = file.replace("/", "\\")
+                                            size += self.get_archive_size(file, file_type)
+                                elif platform.machine() == "x86":
+                                    if "x86file" in item:
+                                        for file in item["x86file"]:
+                                            file_type = ""
+                                            result = file.split(".")
+                                            match result[1]:
+                                                case "zip":
+                                                    file_type = "zip"
+                                                case "rar":
+                                                    file_type = "rar"
+                                                case "7z":
+                                                    file_type = "7z"
+                                                case "tar":
+                                                    file_type = "tar.gz"
+                                                case _:
+                                                    continue
+                                            file = file.replace("/", "\\")
+                                            size += self.get_archive_size(file, file_type)
+        return size
+
+    @staticmethod
+    def get_archive_size(file, file_type) -> int:
+        if file_type == "zip":
+            import zipfile
+            try:
+                with zipfile.ZipFile(file, 'r') as zip_ref:
+                    return sum(info.file_size for info in zip_ref.infolist())
+            except Exception as e:
+                print(e)
+                return 0
+        elif file_type == "rar":
+            import rarfile
+            try:
+                with rarfile.RarFile(file, 'r') as rar_ref:
+                    return sum(f.file_size for f in rar_ref.infolist())
+            except Exception as e:
+                print(e)
+                return 0
+        elif file_type == "7z":
+            import py7zr
+            try:
+                with py7zr.SevenZipFile(file, 'r') as sevenzip_ref:
+                    return sum(f.file_properties().get("uncompressed") for f in sevenzip_ref.files)
+            except Exception as e:
+                print(e)
+                return 0
+        else:
+            NotImplementedError("Not Implemented Type: " + file_type)
+            return 0
 
     def find_component_by_id(self, component_id):
         # 递归搜索QTreeWidget中匹配ID的项目
@@ -752,6 +870,26 @@ class ComponentsPage(BasePage):
             if result:
                 return result
         return None
+
+    @staticmethod
+    def find_items_recursive(tree, text, column=0, match_flag=Qt.MatchFlag.MatchContains):
+        def search(items, results):
+            for item in items:
+                item_text = item.text(column)
+                # Check for a match based on the specified flag
+                if (
+                        (match_flag == Qt.MatchFlag.MatchContains and text in item_text) or
+                        (match_flag == Qt.MatchFlag.MatchExactly and item_text == text)
+                ):
+                    results.append(item)
+                # Recursively search children
+                if item.childCount() > 0:
+                    search([item.child(i) for i in range(item.childCount())], results)
+
+        results = []
+        # Start search from top-level items
+        search([tree.topLevelItem(i) for i in range(tree.topLevelItemCount())], results)
+        return results
 
     def on_item_changed(self, item, column):
         component_key = item.data(0, Qt.ItemDataRole.UserRole)

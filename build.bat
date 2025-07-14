@@ -76,7 +76,7 @@ cls
 echo pack minimal installer
 echo Continue?
 pause > nul
-7z a "../BB+ 0.11 v1.12 Beta [MINI].7z" ../dist/.
+7z a "../BB+ 0.11 v1.12 Beta 2 [MINI].7z" ../dist/.
 if "%errorlevel%" neq "0" (
     echo Error when running this section!
     pause
@@ -101,6 +101,8 @@ pause > nul
 7z a StackableItems.7z StackableItems/.
 7z a SeedExtension.7z SeedExtension/.
 7z a PineDebug.7z PineDebug/.
+7z a TexturePackMod.7z TexturePackMod/.
+7z a ChineseTexturePack.7z ChineseTexturePack/.
 if "%errorlevel%" neq "0" (
     echo Error when running this section!
     pause
@@ -125,6 +127,8 @@ copy ChaoticChallenges.7z ..\dist\pack\ChaoticChallenges.7z /Y
 copy StackableItems.7z ..\dist\pack\StackableItems.7z /Y
 copy SeedExtension.7z ..\dist\pack\SeedExtension.7z /Y
 copy PineDebug.7z ..\dist\pack\PineDebug.7z /Y
+copy TexturePackMod.7z ..\dist\pack\TexturePackMod.7z /Y
+copy ChineseTexturePack.7z ..\dist\pack\ChineseTexturePack.7z /Y
 if "%errorlevel%" neq "0" (
     echo Error when running this section!
     pause
@@ -134,7 +138,7 @@ cls
 echo pack full installer
 echo Continue?
 pause > nul
-7z a "../BB+ 0.11 v1.12 Beta [FULL].7z" ../dist/.
+7z a "../BB+ 0.11 v1.12 Beta 2 [FULL].7z" ../dist/.
 if "%errorlevel%" neq "0" (
     echo Error when running this section!
     pause
