@@ -101,7 +101,6 @@ pause > nul
 7z a SeedExtension.7z SeedExtension/.
 7z a PineDebug.7z PineDebug/.
 7z a TexturePackMod.7z TexturePackMod/.
-7z a ChineseTexturePack.7z ChineseTexturePack/.
 if "%errorlevel%" neq "0" (
     echo Error when running this section!
     pause
@@ -126,8 +125,7 @@ copy ChaoticChallenges.7z ..\dist\pack\ChaoticChallenges.7z /Y
 copy StackableItems.7z ..\dist\pack\StackableItems.7z /Y
 copy SeedExtension.7z ..\dist\pack\SeedExtension.7z /Y
 copy PineDebug.7z ..\dist\pack\PineDebug.7z /Y
-copy TexturePackMod.7z ..\dist\pack\TexturePackMod.7z /Y
-copy ChineseTexturePack.7z ..\dist\pack\ChineseTexturePack.7z /Y
+copy TexturePackMod.7z ..\dist\pack\TexturePackMod.7z /
 if "%errorlevel%" neq "0" (
     echo Error when running this section!
     pause
