@@ -33,8 +33,7 @@ cls
 echo copy necessary files
 echo Continue?
 pause > nul
-copy BBPC.cfg BepInEx64\BepInEx\config\BBPC.cfg /Y
-copy BBPC.cfg BepInEx86\BepInEx\config\BBPC.cfg /Y
+copy com.baymaxawa.bbpc.cfg BBPC\BepInEx\config\com.baymaxawa.bbpc.cfg /Y
 copy header.png ..\dist\pack\header.png /Y
 copy left.png ..\dist\pack\left.png /Y
 copy items.json ..\dist\pack\items.json /Y
