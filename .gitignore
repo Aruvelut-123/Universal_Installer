@@ -8,5 +8,5 @@ left.png
 header.png
 icon.ico
 *.7z
-build.bat
-*.bat
+*.log
+*.zip

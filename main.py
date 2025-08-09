@@ -634,6 +634,9 @@ class ComponentsPage(BasePage):
                     main_item.setFlags(main_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
                 else:
                     main_item.setText(0, item["name"])
+            if "disabled" in item:
+                if item["disabled"]:
+                    main_item.setFlags(main_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
             if item["checked"]:
                 if "part_checked" in item:
                     if item["part_checked"]:
