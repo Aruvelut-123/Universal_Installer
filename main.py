@@ -707,7 +707,9 @@ class ComponentsPage(BasePage):
             text += f"{size / GB:.2f} GB"
         else:
             text += f"{size / TB:.2f} TB"
-
+		
+        self.need_space = size
+		
         self.space_label.setText(text)
 
     def on_next(self):
@@ -728,6 +730,7 @@ class ComponentsPage(BasePage):
                 child_state = child.checkState(0) == Qt.CheckState.Checked
                 self.parent.selected_components[child_key] = child_state
 
+        self.parent.need_space = self.need_space
         self.parent.go_to_page("directory")
 
     def on_cancel(self):
@@ -973,7 +976,7 @@ class DirectoryPage(BasePage):
         self.space_layout = QHBoxLayout()
         self.space_layout.addStretch(1)
 
-        self.required_label = QLabel("所需空间: 0 MB")
+        self.required_label = QLabel("所需空间: 0 KB")
         self.required_label.setStyleSheet("font-size: 9pt; margin: 5px;")
 
         self.available_label = QLabel()
@@ -997,6 +1000,8 @@ class DirectoryPage(BasePage):
 
         # 监听路径变化
         self.path_input.textChanged.connect(self.update_disk_space)
+        
+        self.parent.page_shown.connect(self.page_shown)
 
     def browse_directory(self):
         directory = QFileDialog.getExistingDirectory(
@@ -1009,7 +1014,30 @@ class DirectoryPage(BasePage):
             else:
                 self.path_input.setText(directory)
 
+    def page_shown(self, name:str):
+        if name == "directory":
+            text = "所需空间："
+            KB = 1000  # Use 1024 for binary sizes
+            MB = 1000 * 1000
+            GB = 1000 * 1000 * 1000
+            TB = 1000 * 1000 * 1000 * 1000
+        
+            size = self.parent.need_space
+        
+            if size < KB:
+                text += f"{size} B"
+            elif size < MB:
+                text += f"{size / KB:.2f} KB"
+            elif size < GB:
+                text += f"{size / MB:.2f} MB"
+            elif size < TB:
+                text += f"{size / GB:.2f} GB"
+            else:
+                text += f"{size / TB:.2f} TB"
+            self.required_label.setText(text)
+
     def update_disk_space(self):
+        
         path = self.path_input.text()
         if path and os.path.exists(path):
             drive = os.path.splitdrive(path)[0]
@@ -1253,6 +1281,8 @@ class FinishPage(BasePage):
 
 # 主窗口
 class InstallerWindow(QMainWindow):
+    page_shown = Signal(str)
+	
     def __init__(self):
         super().__init__()
         self.setWindowTitle(PROGRAM_NAME)
@@ -1277,6 +1307,7 @@ class InstallerWindow(QMainWindow):
         # 初始化安装数据
         self.install_path = ""
         self.selected_components = {}
+        self.need_space = 0
         self.install_success = False
 
         # 初始化页面
@@ -1308,6 +1339,7 @@ class InstallerWindow(QMainWindow):
         self.go_to_page("welcome")
 
     def go_to_page(self, page_name):
+        self.page_shown.emit(page_name)
         self.stacked_widget.setCurrentWidget(self.pages[page_name])
 
         # 页面切换时的特殊处理
