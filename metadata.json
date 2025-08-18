@@ -1,7 +1,7 @@
 {
   "program_name": "BB+ 汉化模组安装程序",
   "short_name": "BB+ 汉化包",
-  "version": "1.12 Beta 3",
+  "version": "1.12",
   "is_release": true,
   "need_admin": true,
   "password": "0",

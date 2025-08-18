@@ -352,6 +352,45 @@
       }
     },
     {
+      "name": "关卡加载API",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "level_loading_api",
+      "desc": "<b>关卡加载API</b>: 用于加载自定义关卡的API",
+      "after": "other_mods",
+      "dependencies": [
+        "main",
+        "modding_api"
+      ],
+      "files": [
+        "pack/LevelLoader.zip"
+      ],
+      "actions": {
+        "pack/LevelLoader.zip": "{install_path}"
+      }
+    },
+    {
+      "name": "关卡编辑器",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "level_editor",
+      "desc": "<b>关卡编辑器</b>: 用于自定义关卡的模组",
+      "after": "other_mods",
+      "dependencies": [
+        "main",
+        "modding_api",
+        "level_loading_api"
+      ],
+      "files": [
+        "pack/LevelEditor.zip"
+      ],
+      "actions": {
+        "pack/LevelEditor.zip": "{install_path}"
+      }
+    },
+    {
       "name": "材质包",
       "required": false,
       "checked": false,
