@@ -78,7 +78,6 @@ if __name__ == '__main__':
         if os.path.isfile("metadata.json"):
             shutil.copy("metadata.json", "dist\\metadata.json")
         os.chdir("pack")
-        shutil.copy("com.baymaxawa.bbpc.cfg", "BBPC\\BepInEx\\config\\com.baymaxawa.bbpc.cfg")
         os.makedirs("..\\dist\\pack", exist_ok=True)
         for file in files:
             shutil.copy(file, "..\\dist\\pack\\"+file)

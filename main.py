@@ -7,6 +7,8 @@ import time
 import winreg
 import ctypes
 import zipfile
+from operator import truediv
+
 import rarfile
 import py7zr
 import tarfile
@@ -965,11 +967,23 @@ class DirectoryPage(BasePage):
         # 路径选择框
         path_form = QHBoxLayout()
         self.path_input = QLineEdit(self.default_path)
+        if "is_steam_game" in get_installer_metadata():
+            if get_installer_metadata()["is_steam_game"]:
+                detect_btn = QPushButton("自动检测")
+                detect_btn.setMinimumWidth(80)
+                detect_btn.clicked.connect(self.update_directory)
+
         browse_btn = QPushButton("浏览...")
         browse_btn.setMinimumWidth(80)
         browse_btn.clicked.connect(self.browse_directory)
 
         path_form.addWidget(self.path_input)
+
+        if "is_steam_game" in get_installer_metadata():
+            if get_installer_metadata()["is_steam_game"]:
+                if detect_btn is not None:
+                    path_form.addWidget(detect_btn)
+
         path_form.addWidget(browse_btn)
 
         # 空间信息
@@ -1013,6 +1027,84 @@ class DirectoryPage(BasePage):
                 QMessageBox.warning(self, "路径错误", "安装路径不能包含中文字符！")
             else:
                 self.path_input.setText(directory)
+
+    def update_directory(self):
+        self.path_input.setText(self.detect_steam_path())
+
+    def detect_steam_path(self):
+        if not "game_name" in get_installer_metadata() or len(get_installer_metadata()["game_name"]) <= 0:
+            print("game name not contains in installer metadata, returning default path")
+            return self.default_path
+        library_folders = os.path.join(self.get_steam_path(), "steamapps", "libraryfolders.vdf")
+        print("library folders file path: "+library_folders)
+        if os.path.exists(library_folders):
+            import vdf
+            with open(library_folders, "r", encoding="utf-8", errors="ignore") as f:
+                libraries = vdf.load(f)
+            if "game_id" in get_installer_metadata():
+                game_id = get_installer_metadata()["game_id"]
+                has_game_id = True
+            else:
+                has_game_id = False
+            if "libraryfolders" in libraries:
+                for key, value in libraries["libraryfolders"].items():
+                    if key.isdigit():  # 只处理数字键（库条目）
+                        if has_game_id:
+                            if "apps" in value and "path" in value:
+                                apps = value.get("apps", {})
+                                if str(game_id) in apps:
+                                    if os.path.exists(os.path.join(value.get("path"), "steamapps", "common", get_installer_metadata()["game_name"])):
+                                        print("Find game folder at: "+os.path.join(value.get("path"), "steamapps", "common", get_installer_metadata()["game_name"]))
+                                        return os.path.join(value.get("path"), "steamapps", "common", get_installer_metadata()["game_name"])
+                                    else:
+                                        print("game folder not at right position, returning default path")
+                                        return self.default_path
+                            elif "path" in value:
+                                if os.path.exists(os.path.join(value.get("path"), "steamapps", "common", get_installer_metadata()["game_name"])):
+                                    print("Find game folder at: " + os.path.join(value.get("path"), "steamapps", "common", get_installer_metadata()["game_name"]))
+                                    return os.path.join(value.get("path"), "steamapps", "common", get_installer_metadata()["game_name"])
+                                else:
+                                    continue
+                            else:
+                                continue
+            print("Failed to find game folder, returning default path")
+            return self.default_path
+        else:
+            print("library folders file not exists, returning default path")
+            return self.default_path
+
+    def get_steam_path(self):
+        arch = platform.machine().lower()
+        os_name = platform.system().lower()
+        if os_name == "windows":
+            if arch == "amd64" or arch == "x86_64":
+                try:
+                    key = winreg.OpenKey(
+                        winreg.HKEY_LOCAL_MACHINE,
+                        r"SOFTWARE\WOW6432Node\Valve\Steam"
+                    )
+                    path, _ = winreg.QueryValueEx(key, "InstallPath")
+                    winreg.CloseKey(key)
+                    return path
+                except Exception as e:
+                    print(f"读取注册表时出错: {e}")
+                    return None
+            elif arch == "i386" or arch == "x86":
+                try:
+                    key = winreg.OpenKey(
+                        winreg.HKEY_LOCAL_MACHINE,
+                        r"SOFTWARE\Valve\Steam"
+                    )
+                    path, _ = winreg.QueryValueEx(key, "InstallPath")
+                    winreg.CloseKey(key)
+                    return path
+                except Exception as e:
+                    print(f"读取注册表时出错: {e}")
+                    return None
+            else:
+                raise NotImplementedError("Not support arm system for now.")
+        else:
+            return None
 
     def page_shown(self, name:str):
         if name == "directory":
