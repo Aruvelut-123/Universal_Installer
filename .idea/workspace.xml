@@ -4,12 +4,8 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="932e9eb6-c186-44d7-8d03-f9ea206d0213" name="更改" comment="update the examples">
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+    <list default="true" id="932e9eb6-c186-44d7-8d03-f9ea206d0213" name="更改" comment="update to add auto dectect steam game folder">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/build.py" beforeDir="false" afterPath="$PROJECT_DIR$/build.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/metadata.json" beforeDir="false" afterPath="$PROJECT_DIR$/metadata.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/pack/items.json" beforeDir="false" afterPath="$PROJECT_DIR$/pack/items.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -51,25 +47,25 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "ASKED_MARK_IGNORED_FILES_AS_EXCLUDED": "true",
-    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
-    "Batch.Build Installer.executor": "Run",
-    "ModuleVcsDetector.initialDetectionPerformed": "true",
-    "Python.Build Installer.executor": "Run",
-    "Python.Installer test.executor": "Run",
-    "Python.build command test.executor": "Run",
-    "Python.main.executor": "Run",
-    "Python.test.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "master",
-    "last_opened_file_path": "C:/Users/Baymaxawa/PycharmProjects/PythonProject/pack",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;ASKED_MARK_IGNORED_FILES_AS_EXCLUDED&quot;: &quot;true&quot;,
+    &quot;ASKED_SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
+    &quot;Batch.Build Installer.executor&quot;: &quot;Run&quot;,
+    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
+    &quot;Python.Build Installer.executor&quot;: &quot;Run&quot;,
+    &quot;Python.Installer test.executor&quot;: &quot;Run&quot;,
+    &quot;Python.build command test.executor&quot;: &quot;Run&quot;,
+    &quot;Python.main.executor&quot;: &quot;Run&quot;,
+    &quot;Python.test.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;master&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/Baymaxawa/PycharmProjects/PythonProject/pack&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="C:\Users\Baymaxawa\PycharmProjects\PythonProject\pack" />
@@ -82,7 +78,7 @@
       <recent name="C:\Users\Baymaxawa\PycharmProjects\PythonProject" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.Installer test">
+  <component name="RunManager" selected="Python.Build Installer">
     <configuration name="Build Installer" type="BatchConfigurationType" factoryName="Batch">
       <module name="Universal Installer" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -343,7 +339,15 @@
       <option name="project" value="LOCAL" />
       <updated>1755521508010</updated>
     </task>
-    <option name="localTasksCounter" value="24" />
+    <task id="LOCAL-00024" summary="update to add auto dectect steam game folder">
+      <option name="closed" value="true" />
+      <created>1759547749307</created>
+      <option name="number" value="00024" />
+      <option name="presentableId" value="LOCAL-00024" />
+      <option name="project" value="LOCAL" />
+      <updated>1759547749307</updated>
+    </task>
+    <option name="localTasksCounter" value="25" />
     <servers />
   </component>
   <component name="Vcs.Log.Tabs.Properties">
@@ -371,6 +375,7 @@
     <MESSAGE value="update to fix build script and transform to python build script" />
     <MESSAGE value="修复剩余空间显示BUG" />
     <MESSAGE value="update the examples" />
-    <option name="LAST_COMMIT_MESSAGE" value="update the examples" />
+    <MESSAGE value="update to add auto dectect steam game folder" />
+    <option name="LAST_COMMIT_MESSAGE" value="update to add auto dectect steam game folder" />
   </component>
 </project>

@@ -54,7 +54,7 @@
         "pack/BBDevAPI.zip"
       ],
       "actions": {
-        "pack/BBDevAPI.zip": "{install_path}/BepInEx/plugins"
+        "pack/BBDevAPI.zip": "{install_path}"
       }
     },
     {
@@ -112,6 +112,90 @@
       ],
       "actions": {
         "pack/LevelEditor.zip": "{install_path}"
+      }
+    },
+    {
+      "name": "自定义主菜单API",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "custom_mainmenus_api",
+      "desc": "<b>自定义主菜单API</b>: 用于自定义主菜单的模组",
+      "after": "other_mods",
+      "dependencies": [
+        "main",
+        "modding_api"
+      ],
+      "files": [
+        "pack/CustomMainMenusAPI.zip"
+      ],
+      "actions": {
+        "pack/CustomMainMenusAPI.zip": "{install_path}/BepInEx/plugins"
+      }
+    },
+    {
+      "name": "Pixel的内部API",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "pixel_internal_api",
+      "desc": "<b>Pixel的内部API</b>: PixelGuy用来开发模组而编写的API",
+      "after": "other_mods",
+      "dependencies": [
+        "main",
+        "modding_api"
+      ],
+      "files": [
+        "pack/PIAPI.zip"
+      ],
+      "actions": {
+        "pack/PIAPI.zip": "{install_path}/BepInEx/plugins"
+      }
+    },
+    {
+      "name": "新装饰+",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "new_decorations_plus",
+      "desc": "<b>新装饰+</b>: 这个模组为关卡编辑器添加了五种以上的新装饰，让你的关卡布局更加美观！快来试试吧！",
+      "after": "other_mods",
+      "dependencies": [
+        "main",
+        "modding_api",
+        "level_loading_api",
+        "level_editor",
+        "pixel_internal_api"
+      ],
+      "files": [
+        "pack/NDP.zip"
+      ],
+      "actions": {
+        "pack/NDP.zip": "{install_path}"
+      }
+    },
+    {
+      "name": "BBX",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "baldis_basics_times",
+      "desc": "<b>Baldi's Baiscs Times</b>: 这款使用 BepInEx 制作的模组将超级学校升级成了巨型学校！它包含大量新内容，例如新角色​​、新物品、新事件，当然还有新建筑！",
+      "after": "other_mods",
+      "dependencies": [
+        "main",
+        "modding_api",
+        "level_loading_api",
+        "level_editor",
+        "pixel_internal_api",
+        "new_decorations_plus",
+        "custom_mainmenus_api"
+      ],
+      "files": [
+        "pack/BBX.zip"
+      ],
+      "actions": {
+        "pack/BBX.zip": "{install_path}"
       }
     },
     {
