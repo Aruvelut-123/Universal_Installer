@@ -1,4 +1,4 @@
-name: Build Python application
+name: Build for PR and pushes
 
 on:
   push:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 jobs:
-  build_for_windows:
+  build:
     name: Build for Windows
     runs-on: windows-latest
     steps:
