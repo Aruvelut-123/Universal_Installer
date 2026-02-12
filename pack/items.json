@@ -199,6 +199,64 @@
       }
     },
     {
+      "name": "Baldi的挑战罐",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "baldis_challenge_jar",
+      "desc": "<b>Baldi的挑战罐</b>: 来自Baldi的新挑战！",
+      "after": "other_mods",
+      "dependencies": [
+        "main",
+        "modding_api"
+      ],
+      "files": [
+        "pack/ChallengeJar.zip"
+      ],
+      "actions": {
+        "pack/ChallengeJar.zip": "{install_path}"
+      }
+    },
+    {
+      "name": "有趣的选项",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "fun_settings",
+      "desc": "<b>有趣的选项</b>: 将有趣的选项加入BB+的一个小型模组。",
+      "after": "other_mods",
+      "dependencies": [
+        "main",
+        "modding_api"
+      ],
+      "files": [
+        "pack/FunSettings.zip"
+      ],
+      "actions": {
+        "pack/FunSettings.zip": "{install_path}"
+      }
+    },
+    {
+      "name": "小型事件",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "micro_events",
+      "desc": "<b>小型事件</b>: 这款BB+模组让游戏变得尽可能随机且难以预测！超过100种自适应微事件等你体验！",
+      "after": "other_mods",
+      "dependencies": [
+        "main",
+        "modding_api",
+        "pixel_internal_api"
+      ],
+      "files": [
+        "pack/MicroEvents.zip"
+      ],
+      "actions": {
+        "pack/MicroEvents.zip": "{install_path}"
+      }
+    },
+    {
       "name": "材质包",
       "required": false,
       "checked": false,
