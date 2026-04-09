@@ -7,8 +7,6 @@ import time
 import winreg
 import ctypes
 import zipfile
-from operator import truediv
-
 import rarfile
 import py7zr
 import tarfile
@@ -107,10 +105,12 @@ class InstallThread(QThread):
 
             time.sleep(2)
             # 2. 安装组件
-            step = 95 / len(self.components)
+            step = 95 / max(len(self.components), 1)
+            current_progress = 5
             for component in self.components:
                 if self.components[component]:
-                    self.progress_updated.emit(step, "正在安装组件"+component+"...")
+                    current_progress += step
+                    self.progress_updated.emit(int(current_progress), "正在安装组件"+component+"...")
                     for item in get_metadata()["items"]:
                         if item["id"] == component:
                             if item["files"] is not None:
@@ -124,7 +124,8 @@ class InstallThread(QThread):
                                         in_path = in_path.replace("/", "\\")
                                     else:
                                         continue
-                                    match result[1]:
+                                    ext = result[-1] if len(result) > 1 else ""
+                                    match ext:
                                         case "zip":
                                             file_type = "zip"
                                         case "rar":
@@ -153,7 +154,8 @@ class InstallThread(QThread):
                                                 in_path = in_path.replace("/", "\\")
                                             else:
                                                 continue
-                                            match result[1]:
+                                            ext = result[-1] if len(result) > 1 else ""
+                                            match ext:
                                                 case "zip":
                                                     file_type = "zip"
                                                 case "rar":
@@ -178,7 +180,8 @@ class InstallThread(QThread):
                                                 in_path = in_path.replace("/", "\\")
                                             else:
                                                 continue
-                                            match result[1]:
+                                            ext = result[-1] if len(result) > 1 else ""
+                                            match ext:
                                                 case "zip":
                                                     file_type = "zip"
                                                 case "rar":
@@ -272,14 +275,10 @@ class BasePage(QWidget):
         window_size.setHeight(WINDOW_SIZE[1])
         self.setFixedSize(window_size)
 
-        try:
-            open(get_installer_metadata()["left_pic"]).close()
-        except:
+        if not os.path.exists(get_installer_metadata().get("left_pic", "")):
             has_left_area = False
 
-        try:
-            open(get_installer_metadata()["header_pic"]).close()
-        except:
+        if not os.path.exists(get_installer_metadata().get("header_pic", "")):
             has_banner = False
 
         if has_banner:
@@ -532,6 +531,7 @@ class PasswordPage(BasePage):
         password_group = QGroupBox("密码输入框")
         password_layout = QVBoxLayout(password_group)
 
+        tip_label = None
         if "qq_group" in get_installer_metadata():
             # 添加提示文本
             tip_label = QLabel("请加群 "+get_installer_metadata()["qq_group"]+" 获取密码！")
@@ -547,7 +547,8 @@ class PasswordPage(BasePage):
         password_form.addWidget(password_label)
         password_form.addWidget(self.password_input)
 
-        password_layout.addWidget(tip_label)
+        if tip_label is not None:
+            password_layout.addWidget(tip_label)
         password_layout.addLayout(password_form)
 
         self.content_layout.addWidget(password_group)
@@ -771,16 +772,17 @@ class ComponentsPage(BasePage):
 
     def get_selected_components_sizes(self):
         size = 0
-        for item in get_metadata()["items"]:
-            for component in self.find_items_recursive(self.components_list, item["name"]):
+        for meta_item in get_metadata()["items"]:
+            for component in self.find_items_recursive(self.components_list, meta_item["name"]):
                 if component.checkState(0) == Qt.CheckState.Checked:
-                    for item in get_metadata()["items"]:
-                        if item["id"] == component.data(0, Qt.ItemDataRole.UserRole):
-                            if item["files"] is not None:
-                                for file in item["files"]:
+                    for inner_item in get_metadata()["items"]:
+                        if inner_item["id"] == component.data(0, Qt.ItemDataRole.UserRole):
+                            if inner_item["files"] is not None:
+                                for file in inner_item["files"]:
                                     file_type = ""
                                     result = file.split(".")
-                                    match result[1]:
+                                    ext = result[-1] if len(result) > 1 else ""
+                                    match ext:
                                         case "zip":
                                             file_type = "zip"
                                         case "rar":
@@ -793,13 +795,14 @@ class ComponentsPage(BasePage):
                                             continue
                                     file = file.replace("/", "\\")
                                     size += self.get_archive_size(file, file_type)
-                            if "x64file" in item or "x86file" in item:
+                            if "x64file" in inner_item or "x86file" in inner_item:
                                 if platform.machine() == "AMD64":
-                                    if "x64file" in item:
-                                        for file in item["x64file"]:
+                                    if "x64file" in inner_item:
+                                        for file in inner_item["x64file"]:
                                             file_type = ""
                                             result = file.split(".")
-                                            match result[1]:
+                                            ext = result[-1] if len(result) > 1 else ""
+                                            match ext:
                                                 case "zip":
                                                     file_type = "zip"
                                                 case "rar":
@@ -813,11 +816,12 @@ class ComponentsPage(BasePage):
                                             file = file.replace("/", "\\")
                                             size += self.get_archive_size(file, file_type)
                                 elif platform.machine() == "x86":
-                                    if "x86file" in item:
-                                        for file in item["x86file"]:
+                                    if "x86file" in inner_item:
+                                        for file in inner_item["x86file"]:
                                             file_type = ""
                                             result = file.split(".")
-                                            match result[1]:
+                                            ext = result[-1] if len(result) > 1 else ""
+                                            match ext:
                                                 case "zip":
                                                     file_type = "zip"
                                                 case "rar":
@@ -859,8 +863,7 @@ class ComponentsPage(BasePage):
                 print(e)
                 return 0
         else:
-            NotImplementedError("Not Implemented Type: " + file_type)
-            return 0
+            raise NotImplementedError("Not Implemented Type: " + file_type)
 
     def find_component_by_id(self, component_id):
         # 递归搜索QTreeWidget中匹配ID的项目
@@ -904,7 +907,7 @@ class ComponentsPage(BasePage):
 
         # 仅当项目被选中时处理依赖
         if item.checkState(0) == Qt.CheckState.Checked:
-            for items in metadata["items"]:
+            for items in get_metadata()["items"]:
                 if items["id"] == component_key:
                     # 获取组件的依赖项列表（假设component_key中有dependencies字段）
                     dependencies = items.get('dependencies', [])
@@ -1035,7 +1038,11 @@ class DirectoryPage(BasePage):
         if not "game_name" in get_installer_metadata() or len(get_installer_metadata()["game_name"]) <= 0:
             print("game name not contains in installer metadata, returning default path")
             return self.default_path
-        library_folders = os.path.join(self.get_steam_path(), "steamapps", "libraryfolders.vdf")
+        steam_path = self.get_steam_path()
+        if steam_path is None:
+            print("Steam path not found, returning default path")
+            return self.default_path
+        library_folders = os.path.join(steam_path, "steamapps", "libraryfolders.vdf")
         print("library folders file path: "+library_folders)
         if os.path.exists(library_folders):
             import vdf
@@ -1382,7 +1389,7 @@ class InstallerWindow(QMainWindow):
         self.setWindowIcon(QIcon("icon.ico"))
 
         metadata = get_metadata()
-        if metadata != []:
+        if metadata != {}:
             self.default_path = metadata["items"][0]["default_path"]
 
         if "need_admin" in get_installer_metadata():
