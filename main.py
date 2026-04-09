@@ -902,21 +902,106 @@ class ComponentsPage(BasePage):
         search([tree.topLevelItem(i) for i in range(tree.topLevelItemCount())], results)
         return results
 
+    def get_incompatible_ids(self, component_id):
+        """获取某个组件的不兼容组件ID列表"""
+        for items in get_metadata()["items"]:
+            if items["id"] == component_id:
+                return items.get('incompatible', [])
+        return []
+
+    def is_disabled_by_incompatible(self, component_id):
+        """检查某个组件是否因为与其他已选中的组件不兼容而应该被禁用"""
+        for items in get_metadata()["items"]:
+            incompat_list = items.get('incompatible', [])
+            if component_id in incompat_list:
+                tree_item = self.find_component_by_id(items["id"])
+                if tree_item and tree_item.checkState(0) == Qt.CheckState.Checked:
+                    return True
+            if items["id"] == component_id:
+                for incompat_id in items.get('incompatible', []):
+                    tree_item = self.find_component_by_id(incompat_id)
+                    if tree_item and tree_item.checkState(0) == Qt.CheckState.Checked:
+                        return True
+        return False
+
+    def get_component_name(self, component_id):
+        """根据组件ID获取组件名称"""
+        for items in get_metadata()["items"]:
+            if items["id"] == component_id:
+                return items.get("name", component_id)
+        return component_id
+
     def on_item_changed(self, item, column):
         component_key = item.data(0, Qt.ItemDataRole.UserRole)
+
+        # 暂时断开信号避免递归调用
+        self.components_list.itemChanged.disconnect(self.on_item_changed)
 
         # 仅当项目被选中时处理依赖
         if item.checkState(0) == Qt.CheckState.Checked:
             for items in get_metadata()["items"]:
                 if items["id"] == component_key:
-                    # 获取组件的依赖项列表（假设component_key中有dependencies字段）
+                    # 获取组件的依赖项列表
                     dependencies = items.get('dependencies', [])
                     for dependency_id in dependencies:
-                        # 在当前树中查找依赖项（需要实现find_component_by_id方法）
                         dep_item = self.find_component_by_id(dependency_id)
                         if dep_item and dep_item.checkState(0) != Qt.CheckState.Checked:
                             dep_item.setCheckState(0, Qt.CheckState.Checked)
                     break
+
+            # 处理不兼容组件
+            incompatible_ids = self.get_incompatible_ids(component_key)
+            for incompat_id in incompatible_ids:
+                incompat_item = self.find_component_by_id(incompat_id)
+                if incompat_item is None:
+                    continue
+                if incompat_item.checkState(0) == Qt.CheckState.Checked:
+                    # 两个不兼容组件都被选中，弹窗让用户选择
+                    current_name = self.get_component_name(component_key)
+                    other_name = self.get_component_name(incompat_id)
+                    # 重新连接信号后再弹窗（弹窗会阻塞事件循环）
+                    self.components_list.itemChanged.connect(self.on_item_changed)
+                    reply = QMessageBox.question(
+                        self, "组件冲突",
+                        f"「{current_name}」与「{other_name}」不兼容，不能同时安装。\n\n"
+                        f"选择「是」保留「{current_name}」，\n"
+                        f"选择「否」保留「{other_name}」。",
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                        QMessageBox.StandardButton.Yes
+                    )
+                    self.components_list.itemChanged.disconnect(self.on_item_changed)
+                    if reply == QMessageBox.StandardButton.Yes:
+                        # 保留当前组件，取消另一个
+                        incompat_item.setCheckState(0, Qt.CheckState.Unchecked)
+                        incompat_item.setFlags(incompat_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                    else:
+                        # 保留另一个，取消当前组件
+                        item.setCheckState(0, Qt.CheckState.Unchecked)
+                        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                        # 当前组件已被取消，跳出循环
+                        break
+                else:
+                    # 不兼容组件未被选中，禁用它
+                    incompat_item.setCheckState(0, Qt.CheckState.Unchecked)
+                    incompat_item.setFlags(incompat_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+
+        elif item.checkState(0) == Qt.CheckState.Unchecked:
+            # 取消选中时，重新启用被此组件禁用的不兼容组件
+            incompatible_ids = self.get_incompatible_ids(component_key)
+            for incompat_id in incompatible_ids:
+                incompat_item = self.find_component_by_id(incompat_id)
+                if incompat_item is None:
+                    continue
+                # 检查该不兼容组件是否还被其他已选中的组件禁用
+                if not self.is_disabled_by_incompatible(incompat_id):
+                    # 检查组件本身是否在metadata中被标记为disabled
+                    meta_disabled = False
+                    for meta_item in get_metadata()["items"]:
+                        if meta_item["id"] == incompat_id:
+                            meta_disabled = meta_item.get("disabled", False)
+                            break
+                    if not meta_disabled:
+                        incompat_item.setFlags(incompat_item.flags() | Qt.ItemFlag.ItemIsEnabled)
 
         # 当项目状态改变时调用
         if item.parent() is not None:
@@ -933,9 +1018,6 @@ class ComponentsPage(BasePage):
                 else:
                     all_checked = False
 
-            # 暂时断开信号避免递归调用
-            self.components_list.itemChanged.disconnect(self.on_item_changed)
-
             # 设置父项目的状态
             if all_checked:
                 parent.setCheckState(0, Qt.CheckState.Checked)
@@ -944,8 +1026,8 @@ class ComponentsPage(BasePage):
             else:
                 parent.setCheckState(0, Qt.CheckState.Unchecked)
 
-            # 重新连接信号
-            self.components_list.itemChanged.connect(self.on_item_changed)
+        # 重新连接信号
+        self.components_list.itemChanged.connect(self.on_item_changed)
 
 # 安装位置选择页面
 class DirectoryPage(BasePage):
