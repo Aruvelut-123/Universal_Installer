@@ -71,7 +71,6 @@ def get_metadata() -> dict:
 PROGRAM_NAME : str = get_installer_metadata()["program_name"]
 VERSION : str = get_installer_metadata()["version"]
 IS_RELEASE : bool = get_installer_metadata()["is_release"]
-PASSWORD : str = get_installer_metadata()["password"]
 REGISTRY_KEY : str = "Software\\"+get_installer_metadata()["registry_key_name"]
 UNINSTALL_REG_KEY : str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"+get_installer_metadata()["uninstall_registry_key_name"]
 WINDOW_SIZE = (640, 480)  # 固定窗口大小
@@ -95,6 +94,7 @@ class InstallThread(QThread):
         self.path = path
         self.components = components
         self.success = False
+        self.installed_paths = {}  # comp_id -> list of installed paths
 
     def run(self):
         try:
@@ -105,12 +105,13 @@ class InstallThread(QThread):
 
             time.sleep(2)
             # 2. 安装组件
-            step = 95 / max(len(self.components), 1)
+            step = 85 / max(len(self.components), 1)
             current_progress = 5
             for component in self.components:
                 if self.components[component]:
                     current_progress += step
                     self.progress_updated.emit(int(current_progress), "正在安装组件"+component+"...")
+                    self.installed_paths[component] = []
                     for item in get_metadata()["items"]:
                         if item["id"] == component:
                             if item["files"] is not None:
@@ -136,11 +137,13 @@ class InstallThread(QThread):
                                             file_type = "tar.gz"
                                         case "txt":
                                             shutil.copy(file, in_path)
+                                            self.installed_paths[component].append(in_path)
                                             continue
                                         case _:
                                             continue
                                     file = file.replace("/", "\\")
-                                    self.run_extract(file, file_type, in_path)
+                                    extracted = self.run_extract(file, file_type, in_path)
+                                    self.installed_paths[component].extend(extracted)
                             if "x64file" in item or "x86file" in item:
                                 if platform.machine() == "AMD64":
                                     if "x64file" in item:
@@ -167,7 +170,8 @@ class InstallThread(QThread):
                                                 case _:
                                                     continue
                                             file = file.replace("/", "\\")
-                                            self.run_extract(file, file_type, in_path)
+                                            extracted = self.run_extract(file, file_type, in_path)
+                                            self.installed_paths[component].extend(extracted)
                                 elif platform.machine() == "x86":
                                     if "x86file" in item:
                                         for file in item["x86file"]:
@@ -193,11 +197,17 @@ class InstallThread(QThread):
                                                 case _:
                                                     continue
                                             file = file.replace("/", "\\")
-                                            self.run_extract(file, file_type, in_path)
+                                            extracted = self.run_extract(file, file_type, in_path)
+                                            self.installed_paths[component].extend(extracted)
             time.sleep(2)
 
+            # 3. 保存安装清单和卸载程序
+            self.progress_updated.emit(92, "正在生成卸载程序...")
+            self.save_install_manifest()
+            self.copy_uninstaller()
+
             ## 4. 注册表操作
-            #self.progress_updated.emit(90, "正在更新系统设置...")
+            #self.progress_updated.emit(95, "正在更新系统设置...")
             #self.create_registry_entries()
 
             self.success = True
@@ -210,27 +220,91 @@ class InstallThread(QThread):
 
     def run_extract(self, archive_name, archive_type, in_path):
         self.progress_updated.emit(0, "正在解压文件" + archive_name + "...")
+        extracted_paths = []
         try:
             match archive_type:
                 case "zip":
                     with zipfile.ZipFile(archive_name, "r") as archive:
+                        extracted_paths = [os.path.join(in_path, n) for n in archive.namelist()]
                         archive.extractall(in_path)
                 case "rar":
                     with rarfile.RarFile(archive_name, "r") as archive:
+                        extracted_paths = [os.path.join(in_path, n) for n in archive.namelist()]
                         archive.extractall(in_path)
                 case "7z":
-
                     with py7zr.SevenZipFile(archive_name, "r") as archive:
+                        extracted_paths = [os.path.join(in_path, n) for n in archive.getnames()]
                         archive.extractall(in_path)
                 case "tar":
                     with tarfile.TarFile(archive_name, "r") as archive:
+                        extracted_paths = [os.path.join(in_path, n) for n in archive.getnames()]
                         archive.extractall(in_path)
                 case _:
-                    return
+                    return []
             self.progress_updated.emit(0, f"解压成功: {archive_name}")
         except Exception as e:
             print(e)
             raise e
+        return extracted_paths
+
+    def save_install_manifest(self):
+        """保存安装清单到安装目录，供卸载程序使用"""
+        items_meta = get_metadata().get("items", [])
+        installed_components = {}
+        for comp_id, paths in self.installed_paths.items():
+            comp_name = comp_id
+            for item in items_meta:
+                if item["id"] == comp_id:
+                    comp_name = item.get("name", comp_id)
+                    break
+            installed_components[comp_id] = {
+                "name": comp_name,
+                "installed_paths": paths
+            }
+
+        # 找出核心组件 ID
+        main_item_id = ""
+        if MAIN_ITEM < len(items_meta):
+            main_item_id = items_meta[MAIN_ITEM]["id"]
+
+        manifest = {
+            "program_name": PROGRAM_NAME,
+            "version": VERSION,
+            "install_path": self.path,
+            "main_item_id": main_item_id,
+            "registry_key": REGISTRY_KEY,
+            "uninstall_registry_key": UNINSTALL_REG_KEY,
+            "items_metadata": items_meta,
+            "installed_components": installed_components
+        }
+
+        manifest_path = os.path.join(self.path, "install_manifest.json")
+        try:
+            with open(manifest_path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, ensure_ascii=False, indent=2)
+            self.progress_updated.emit(0, "安装清单已保存")
+        except Exception as e:
+            self.progress_updated.emit(0, f"保存安装清单失败: {e}")
+
+    def copy_uninstaller(self):
+        """将卸载程序复制到安装目录"""
+        # 查找卸载程序（与安装程序同目录或打包后的资源目录）
+        uninstaller_name = "Uninstall.exe"
+        src_candidates = [
+            os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), uninstaller_name),
+            os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "uninstaller.exe"),
+        ]
+        dest_path = os.path.join(self.path, uninstaller_name)
+        for src in src_candidates:
+            if os.path.exists(src):
+                try:
+                    shutil.copy2(src, dest_path)
+                    self.progress_updated.emit(0, "卸载程序已复制")
+                    return
+                except Exception as e:
+                    self.progress_updated.emit(0, f"复制卸载程序失败: {e}")
+                    return
+        self.progress_updated.emit(0, "警告: 未找到卸载程序文件，跳过")
 
     def create_registry_entries(self):
         # 创建安装信息注册表项
@@ -512,63 +586,11 @@ class LicensePage(BasePage):
 
     def on_accept(self):
         if self.agree_checkbox.isChecked():
-            if IS_RELEASE:
-                self.parent.go_to_page("components")
-            else:
-                self.parent.go_to_page("password")
-
-    def on_cancel(self):
-        self.parent.cancel_installation()
-
-
-# 密码页面
-class PasswordPage(BasePage):
-    def setup_ui(self):
-        self.title_label.setText(PROGRAM_NAME)
-        self.subtitle_label.setText("程序需要一个正确的安装密码才能继续")
-
-        # 添加密码输入区域
-        password_group = QGroupBox("密码输入框")
-        password_layout = QVBoxLayout(password_group)
-
-        tip_label = None
-        if "qq_group" in get_installer_metadata():
-            # 添加提示文本
-            tip_label = QLabel("请加群 "+get_installer_metadata()["qq_group"]+" 获取密码！")
-            tip_label.setStyleSheet("font-size: 9pt; color: #4BA348; font-weight: bold;")
-
-        # 密码输入框
-        password_form = QHBoxLayout()
-        password_label = QLabel("密码:")
-        self.password_input = QLineEdit()
-        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.password_input.setPlaceholderText("输入安装密码")
-
-        password_form.addWidget(password_label)
-        password_form.addWidget(self.password_input)
-
-        if tip_label is not None:
-            password_layout.addWidget(tip_label)
-        password_layout.addLayout(password_form)
-
-        self.content_layout.addWidget(password_group)
-
-        # 添加按钮
-        back_btn = self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("license"))
-        self.next_button = self.add_button("下一步(N)", self.on_next, "primary")
-        self.add_button("取消(C)", self.on_cancel)
-
-        # 连接回车键
-        self.password_input.returnPressed.connect(self.on_next)
-
-    def on_next(self):
-        if self.password_input.text() == PASSWORD:
             self.parent.go_to_page("components")
-        else:
-            QMessageBox.warning(self, "密码错误", "请输入正确的安装密码！")
 
     def on_cancel(self):
         self.parent.cancel_installation()
+
 
 
 # 组件选择页面
@@ -684,10 +706,7 @@ class ComponentsPage(BasePage):
         self.content_layout.addWidget(components_group)
 
         # 添加按钮
-        if IS_RELEASE:
-            back_btn = self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("license"))
-        else:
-            back_btn = self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("password"))
+        back_btn = self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("license"))
         self.next_button = self.add_button("下一步(N)", self.on_next, "primary")
         self.add_button("取消(C)", self.on_cancel)
         self.on_select_change_size.connect(self.on_select_change_size_method)
@@ -1492,25 +1511,14 @@ class InstallerWindow(QMainWindow):
         self.install_success = False
 
         # 初始化页面
-        if IS_RELEASE:
-            self.pages = {
-                "welcome": WelcomePage(self, True, False, default_path=self.default_path),
-                "license": LicensePage(self),
-                "components": ComponentsPage(self),
-                "directory": DirectoryPage(self),
-                "install": InstallPage(self),
-                "finish": FinishPage(self)
-            }
-        else:
-            self.pages = {
-                "welcome": WelcomePage(self, True, False, default_path=self.default_path),
-                "license": LicensePage(self),
-                "password": PasswordPage(self),
-                "components": ComponentsPage(self),
-                "directory": DirectoryPage(self),
-                "install": InstallPage(self),
-                "finish": FinishPage(self)
-            }
+        self.pages = {
+            "welcome": WelcomePage(self, True, False, default_path=self.default_path),
+            "license": LicensePage(self),
+            "components": ComponentsPage(self),
+            "directory": DirectoryPage(self),
+            "install": InstallPage(self),
+            "finish": FinishPage(self)
+        }
 
         # 添加页面到堆栈
         for name, page in self.pages.items():

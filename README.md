@@ -11,13 +11,14 @@ Pack your application files into the specified structure and Universal Installer
 - **Disk space validation** — Calculates required space from archive contents before installation
 - **Windows registry integration** — Creates install/uninstall registry entries for Add/Remove Programs
 - **Customizable UI** — Configure program name, icons, banners, license text, and footer info via `metadata.json`
-- **Password protection** — Optional password gate for non-release builds
-- **PyInstaller packaging** — Build script to produce a single `.exe` installer
+- **Uninstaller generation** — Automatically creates an uninstaller that lets users selectively remove components; cleans up registry when core components are removed
+- **PyInstaller packaging** — Build script to produce standalone `.exe` binaries for both installer and uninstaller
 
 ## Project Structure
 
 ```
 ├── main.py              # Main GUI application and installation logic
+├── uninstaller.py       # Uninstaller GUI application
 ├── build.py             # Build script for packaging with PyInstaller
 ├── metadata.json        # Installer configuration (name, version, UI assets, etc.)
 ├── requirements.txt     # Python dependencies
@@ -59,4 +60,13 @@ Each component in `items.json` supports the following attributes:
 2. Configure `metadata.json` with your application details
 3. Define your components in `pack/items.json`
 4. Run `python main.py` to launch the installer
-5. Use `python build.py` to package into a standalone `.exe`  
+5. Use `python build.py` to package into standalone `.exe` binaries (installer + uninstaller)
+
+## Uninstaller
+
+During installation, the installer saves an `install_manifest.json` to the install directory and copies `Uninstall.exe` alongside it.  
+The uninstaller reads this manifest to present a component selection tree.
+
+- Select which components to remove
+- If the **core component** (defined by `main_item` in `metadata.json`) is removed, the Windows registry entries are also cleaned up
+- After partial uninstall, the manifest is updated to reflect the remaining components        

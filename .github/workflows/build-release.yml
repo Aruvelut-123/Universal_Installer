@@ -18,14 +18,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if (Test-Path requirements.txt -PathType Leaf) { pip install -r requirements.txt }
-      - name: Build binary
+      - name: Build installer binary
         run: |
           pyinstaller --onefile --windowed main.py
-      - name: Upload binary and signature to Release
+      - name: Build uninstaller binary
+        run: |
+          pyinstaller --onefile --windowed --name Uninstall uninstaller.py
+      - name: Upload binaries to Release
         uses: softprops/action-gh-release@v2.2.2
         with:
           files: |
             ./dist/main.exe
+            ./dist/Uninstall.exe
   changelog:
     runs-on: ubuntu-latest
     continue-on-error: true
