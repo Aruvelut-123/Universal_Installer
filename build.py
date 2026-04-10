@@ -67,14 +67,23 @@ if __name__ == '__main__':
         if ver is None or ver == "" or ver == " ":
             raise ValueError("Version number cannot be None or empty.")
         activate_venv(".venv")
-        params = [
+        installer_params = [
             'main.py',
             '--onefile',
             '--windowed',
             '--icon=pack/icon.ico'
         ]
         from PyInstaller.__main__ import run as pyinstaller_run
-        pyinstaller_run(params)
+        pyinstaller_run(installer_params)
+        # Build uninstaller
+        uninstaller_params = [
+            'uninstaller.py',
+            '--onefile',
+            '--windowed',
+            '--name=Uninstall',
+            '--icon=pack/icon.ico'
+        ]
+        pyinstaller_run(uninstaller_params)
         if os.path.isfile("metadata.json"):
             shutil.copy("metadata.json", "dist\\metadata.json")
         os.chdir("pack")

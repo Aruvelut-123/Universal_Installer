@@ -11,7 +11,8 @@
       "dependencies": [],
       "files": [
         "pack/BBPC.zip",
-        "pack/readme.txt"
+        "pack/readme.txt",
+        "pack/Uninstall.exe"
       ],
       "x86file": [
         "pack/BepInEx86.zip"
@@ -23,7 +24,8 @@
         "pack/BBPC.zip": "{install_path}",
         "pack/BepInEx86.zip": "{install_path}",
         "pack/BepInEx64.zip": "{install_path}",
-        "pack/readme.txt": "{install_path}"
+        "pack/readme.txt": "{install_path}",
+        "pack/Uninstall.exe": "{install_path}"
       }
     },
     {
