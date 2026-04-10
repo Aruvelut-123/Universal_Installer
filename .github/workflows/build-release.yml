@@ -22,7 +22,9 @@ jobs:
           pip install pytest
       - name: Run tests
         run: |
-          python -m pytest tests/ -v --tb=short --junitxml=test-results.xml
+          $output = python -m pytest tests/ -v --tb=short 2>&1 | Out-String
+          Write-Output $output
+          "### Test Results`n``````n$output``````" | Out-File -Append -FilePath $env:GITHUB_STEP_SUMMARY
       - name: Build installer binary
         run: |
           pyinstaller --onefile --windowed main.py
