@@ -1,4 +1,4 @@
-"""Parse JUnit XML test results and output GitHub Actions annotations + markdown table."""
+"""Parse JUnit XML test results and output markdown table to GitHub Actions step summary."""
 
 import sys
 import xml.etree.ElementTree as ET
@@ -33,20 +33,12 @@ def main():
             else:
                 passed.append((name, time_s))
 
-    # GitHub Actions annotations
-    for name, time_s, msg in failed:
-        print(f"::error title=FAIL: {name}::{msg}")
-    for name, time_s, msg in errors:
-        print(f"::error title=ERROR: {name}::{msg}")
-    for name, time_s in passed:
-        print(f"::notice title=PASS: {name}::Completed in {time_s}s")
-
     # Markdown table for GITHUB_STEP_SUMMARY
     total = len(passed) + len(failed) + len(errors)
     summary_lines = []
     summary_lines.append("### Test Results")
     summary_lines.append("")
-    summary_lines.append(f"**{len(passed)}** passed, **{len(failed)}** failed, **{len(errors)}** errors — **{total}** total")
+    summary_lines.append(f"**{len(passed)}** passed, **{len(failed)}** failed, **{len(errors)}** errors - **{total}** total")
     summary_lines.append("")
     summary_lines.append("| Status | Test | Time |")
     summary_lines.append("|--------|------|------|")
@@ -64,7 +56,7 @@ def main():
     import os
     step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if step_summary:
-        with open(step_summary, "a") as f:
+        with open(step_summary, "a", encoding="utf-8") as f:
             f.write(summary + "\n")
     else:
         # Print to stdout if not in CI
