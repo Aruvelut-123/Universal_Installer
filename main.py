@@ -10,7 +10,7 @@ import zipfile
 import rarfile
 import py7zr
 import tarfile
-from typing import override, Any
+import theme
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QStackedWidget, QVBoxLayout, QHBoxLayout,
@@ -126,21 +126,20 @@ class InstallThread(QThread):
                                     else:
                                         continue
                                     ext = result[-1] if len(result) > 1 else ""
-                                    match ext:
-                                        case "zip":
-                                            file_type = "zip"
-                                        case "rar":
-                                            file_type = "rar"
-                                        case "7z":
-                                            file_type = "7z"
-                                        case "tar":
-                                            file_type = "tar.gz"
-                                        case "txt":
-                                            shutil.copy(file, in_path)
-                                            self.installed_paths[component].append(in_path)
-                                            continue
-                                        case _:
-                                            continue
+                                    if ext == "zip":
+                                        file_type = "zip"
+                                    elif ext == "rar":
+                                        file_type = "rar"
+                                    elif ext == "7z":
+                                        file_type = "7z"
+                                    elif ext == "tar":
+                                        file_type = "tar.gz"
+                                    elif ext == "txt":
+                                        shutil.copy(file, in_path)
+                                        self.installed_paths[component].append(in_path)
+                                        continue
+                                    else:
+                                        continue
                                     file = file.replace("/", "\\")
                                     extracted = self.run_extract(file, file_type, in_path)
                                     self.installed_paths[component].extend(extracted)
@@ -158,17 +157,16 @@ class InstallThread(QThread):
                                             else:
                                                 continue
                                             ext = result[-1] if len(result) > 1 else ""
-                                            match ext:
-                                                case "zip":
-                                                    file_type = "zip"
-                                                case "rar":
-                                                    file_type = "rar"
-                                                case "7z":
-                                                    file_type = "7z"
-                                                case "tar":
-                                                    file_type = "tar.gz"
-                                                case _:
-                                                    continue
+                                            if ext == "zip":
+                                                file_type = "zip"
+                                            elif ext == "rar":
+                                                file_type = "rar"
+                                            elif ext == "7z":
+                                                file_type = "7z"
+                                            elif ext == "tar":
+                                                file_type = "tar.gz"
+                                            else:
+                                                continue
                                             file = file.replace("/", "\\")
                                             extracted = self.run_extract(file, file_type, in_path)
                                             self.installed_paths[component].extend(extracted)
@@ -185,17 +183,16 @@ class InstallThread(QThread):
                                             else:
                                                 continue
                                             ext = result[-1] if len(result) > 1 else ""
-                                            match ext:
-                                                case "zip":
-                                                    file_type = "zip"
-                                                case "rar":
-                                                    file_type = "rar"
-                                                case "7z":
-                                                    file_type = "7z"
-                                                case "tar":
-                                                    file_type = "tar.gz"
-                                                case _:
-                                                    continue
+                                            if ext == "zip":
+                                                file_type = "zip"
+                                            elif ext == "rar":
+                                                file_type = "rar"
+                                            elif ext == "7z":
+                                                file_type = "7z"
+                                            elif ext == "tar":
+                                                file_type = "tar.gz"
+                                            else:
+                                                continue
                                             file = file.replace("/", "\\")
                                             extracted = self.run_extract(file, file_type, in_path)
                                             self.installed_paths[component].extend(extracted)
@@ -222,25 +219,24 @@ class InstallThread(QThread):
         self.progress_updated.emit(0, "正在解压文件" + archive_name + "...")
         extracted_paths = []
         try:
-            match archive_type:
-                case "zip":
-                    with zipfile.ZipFile(archive_name, "r") as archive:
-                        extracted_paths = [os.path.join(in_path, n) for n in archive.namelist()]
-                        archive.extractall(in_path)
-                case "rar":
-                    with rarfile.RarFile(archive_name, "r") as archive:
-                        extracted_paths = [os.path.join(in_path, n) for n in archive.namelist()]
-                        archive.extractall(in_path)
-                case "7z":
-                    with py7zr.SevenZipFile(archive_name, "r") as archive:
-                        extracted_paths = [os.path.join(in_path, n) for n in archive.getnames()]
-                        archive.extractall(in_path)
-                case "tar":
-                    with tarfile.TarFile(archive_name, "r") as archive:
-                        extracted_paths = [os.path.join(in_path, n) for n in archive.getnames()]
-                        archive.extractall(in_path)
-                case _:
-                    return []
+            if archive_type == "zip":
+                with zipfile.ZipFile(archive_name, "r") as archive:
+                    extracted_paths = [os.path.join(in_path, n) for n in archive.namelist()]
+                    archive.extractall(in_path)
+            elif archive_type == "rar":
+                with rarfile.RarFile(archive_name, "r") as archive:
+                    extracted_paths = [os.path.join(in_path, n) for n in archive.namelist()]
+                    archive.extractall(in_path)
+            elif archive_type == "7z":
+                with py7zr.SevenZipFile(archive_name, "r") as archive:
+                    extracted_paths = [os.path.join(in_path, n) for n in archive.getnames()]
+                    archive.extractall(in_path)
+            elif archive_type == "tar":
+                with tarfile.TarFile(archive_name, "r") as archive:
+                    extracted_paths = [os.path.join(in_path, n) for n in archive.getnames()]
+                    archive.extractall(in_path)
+            else:
+                return []
             self.progress_updated.emit(0, f"解压成功: {archive_name}")
         except Exception as e:
             print(e)
@@ -439,7 +435,7 @@ class BasePage(QWidget):
         self.footer_label = QLabel(get_installer_metadata()["footer_info"])
         footer_font = QFont("Microsoft YaHei UI", 8)
         self.footer_label.setFont(footer_font)
-        self.footer_label.setStyleSheet("color: #666666;")
+        self.footer_label.setProperty("class", "footer")
         self.footer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # 添加到布局
@@ -462,42 +458,11 @@ class BasePage(QWidget):
 
     def add_button(self, text, callback, style="default"):
         button = QPushButton(text)
-        button_font = QFont("Microsoft YaHei UI", 9)
-        button.setFont(button_font)
-        button.setMinimumSize(100, 30)
+        button.setMinimumSize(100, 32)
 
         if style == "primary":
-            button.setStyleSheet(
-                "QPushButton {"
-                "   background-color: #4BA348;"
-                "   color: white;"
-                "   border: 1px solid #3D8C39;"
-                "   border-radius: 3px;"
-                "   padding: 5px 15px;"
-                "}"
-                "QPushButton:hover {"
-                "   background-color: #3D8C39;"
-                "}"
-                "QPushButton:pressed {"
-                "   background-color: #2D6C29;"
-                "}"
-            )
-        else:
-            button.setStyleSheet(
-                "QPushButton {"
-                "   background-color: #F1F1F1;"
-                "   color: #333333;"
-                "   border: 1px solid #CCCCCC;"
-                "   border-radius: 3px;"
-                "   padding: 5px 15px;"
-                "}"
-                "QPushButton:hover {"
-                "   background-color: #E5E5E5;"
-                "}"
-                "QPushButton:pressed {"
-                "   background-color: #D9D9D9;"
-                "}"
-            )
+            button.setProperty("class", "accent")
+        # Default buttons use the global QSS from theme.py
 
         button.clicked.connect(callback)
         self.button_layout.addWidget(button)
@@ -506,8 +471,7 @@ class BasePage(QWidget):
 
 # 欢迎页面
 class WelcomePage(BasePage):
-    @override
-    def __init__(self, *args: Any, default_path: str, **kwargs: Any):
+    def __init__(self, *args, default_path: str, **kwargs):
         self.default_path = default_path
         super().__init__(*args, **kwargs)
 
@@ -801,17 +765,16 @@ class ComponentsPage(BasePage):
                                     file_type = ""
                                     result = file.split(".")
                                     ext = result[-1] if len(result) > 1 else ""
-                                    match ext:
-                                        case "zip":
-                                            file_type = "zip"
-                                        case "rar":
-                                            file_type = "rar"
-                                        case "7z":
-                                            file_type = "7z"
-                                        case "tar":
-                                            file_type = "tar.gz"
-                                        case _:
-                                            continue
+                                    if ext == "zip":
+                                        file_type = "zip"
+                                    elif ext == "rar":
+                                        file_type = "rar"
+                                    elif ext == "7z":
+                                        file_type = "7z"
+                                    elif ext == "tar":
+                                        file_type = "tar.gz"
+                                    else:
+                                        continue
                                     file = file.replace("/", "\\")
                                     size += self.get_archive_size(file, file_type)
                             if "x64file" in inner_item or "x86file" in inner_item:
@@ -821,17 +784,16 @@ class ComponentsPage(BasePage):
                                             file_type = ""
                                             result = file.split(".")
                                             ext = result[-1] if len(result) > 1 else ""
-                                            match ext:
-                                                case "zip":
-                                                    file_type = "zip"
-                                                case "rar":
-                                                    file_type = "rar"
-                                                case "7z":
-                                                    file_type = "7z"
-                                                case "tar":
-                                                    file_type = "tar.gz"
-                                                case _:
-                                                    continue
+                                            if ext == "zip":
+                                                file_type = "zip"
+                                            elif ext == "rar":
+                                                file_type = "rar"
+                                            elif ext == "7z":
+                                                file_type = "7z"
+                                            elif ext == "tar":
+                                                file_type = "tar.gz"
+                                            else:
+                                                continue
                                             file = file.replace("/", "\\")
                                             size += self.get_archive_size(file, file_type)
                                 elif platform.machine() == "x86":
@@ -840,17 +802,16 @@ class ComponentsPage(BasePage):
                                             file_type = ""
                                             result = file.split(".")
                                             ext = result[-1] if len(result) > 1 else ""
-                                            match ext:
-                                                case "zip":
-                                                    file_type = "zip"
-                                                case "rar":
-                                                    file_type = "rar"
-                                                case "7z":
-                                                    file_type = "7z"
-                                                case "tar":
-                                                    file_type = "tar.gz"
-                                                case _:
-                                                    continue
+                                            if ext == "zip":
+                                                file_type = "zip"
+                                            elif ext == "rar":
+                                                file_type = "rar"
+                                            elif ext == "7z":
+                                                file_type = "7z"
+                                            elif ext == "tar":
+                                                file_type = "tar.gz"
+                                            else:
+                                                continue
                                             file = file.replace("/", "\\")
                                             size += self.get_archive_size(file, file_type)
         return size
@@ -1063,7 +1024,7 @@ class DirectoryPage(BasePage):
         if "select_directory_tip" in get_installer_metadata():
             # 添加提示文本
             tip_label = QLabel(get_installer_metadata()["select_directory_tip"])
-            tip_label.setStyleSheet("font-size: 9pt; color: #4BA348; margin-bottom: 10px;")
+            tip_label.setProperty("class", "subtitle")
             path_layout.addWidget(tip_label)
 
         self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path"]
@@ -1245,14 +1206,15 @@ class DirectoryPage(BasePage):
                 usage = shutil.disk_usage(drive)
                 free_space = usage.free / (1024 * 1024)  # MB
                 self.available_label.setText(f"可用空间: {free_space:.1f} MB")
-                self.available_label.setStyleSheet(
-                    "color: green; font-size: 9pt; font-weight: bold; margin: 5px;"
-                    if free_space > 15.6
-                    else "color: red; font-size: 9pt; font-weight: bold; margin: 5px;"
-                )
+                if free_space > 15.6:
+                    self.available_label.setProperty("class", "success")
+                else:
+                    self.available_label.setProperty("class", "error")
+                self.available_label.style().unpolish(self.available_label)
+                self.available_label.style().polish(self.available_label)
             except:
                 self.available_label.setText("可用空间: 未知")
-                self.available_label.setStyleSheet("color: #666666; font-size: 9pt;")
+                self.available_label.setProperty("class", "subtitle")
 
     def on_install(self):
         path = self.path_input.text()
@@ -1299,18 +1261,6 @@ class InstallPage(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setTextVisible(True)
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 1px solid #CCCCCC;
-                border-radius: 5px;
-                text-align: center;
-                background: black;
-            }
-            QProgressBar::chunk {
-                background-color: #4BA348;
-                width: 10px;
-            }
-        """)
         main_layout.addWidget(self.progress_bar)
 
         # 安装日志区域
@@ -1319,8 +1269,7 @@ class InstallPage(QWidget):
 
         self.log_area = QTextEdit()
         self.log_area.setReadOnly(True)
-        self.log_area.setFont(QFont("Consolas", 9))
-        self.log_area.setStyleSheet("background-color: #000000; color: #CCCCCC;")
+        self.log_area.setProperty("class", "log")
 
         logs_layout.addWidget(self.log_area)
         main_layout.addWidget(logs_group)
@@ -1331,16 +1280,6 @@ class InstallPage(QWidget):
 
         # 显示详情按钮
         self.details_button = QPushButton("隐藏详情(D)")
-        self.details_button.setFont(QFont("Microsoft YaHei UI", 9))
-        self.details_button.setStyleSheet("""
-            QPushButton {
-                background-color: #F1F1F1;
-                color: #333333;
-                border: 1px solid #CCCCCC;
-                border-radius: 3px;
-                padding: 5px 15px;
-            }
-        """)
         self.details_button.clicked.connect(self.toggle_details)
         self.button_layout.addWidget(self.details_button)
 
@@ -1352,8 +1291,7 @@ class InstallPage(QWidget):
 
         # 底部信息
         footer_label = QLabel(get_installer_metadata()["footer_info"])
-        footer_label.setFont(QFont("Microsoft YaHei UI", 8))
-        footer_label.setStyleSheet("color: #666666;")
+        footer_label.setProperty("class", "footer")
         footer_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(footer_label)
 
@@ -1362,42 +1300,10 @@ class InstallPage(QWidget):
 
     def add_button(self, text, callback, style="default"):
         button = QPushButton(text)
-        button_font = QFont("Microsoft YaHei UI", 9)
-        button.setFont(button_font)
-        button.setMinimumSize(100, 30)
+        button.setMinimumSize(100, 32)
 
         if style == "primary":
-            button.setStyleSheet(
-                "QPushButton {"
-                "   background-color: #4BA348;"
-                "   color: white;"
-                "   border: 1px solid #3D8C39;"
-                "   border-radius: 3px;"
-                "   padding: 5px 15px;"
-                "}"
-                "QPushButton:hover {"
-                "   background-color: #3D8C39;"
-                "}"
-                "QPushButton:pressed {"
-                "   background-color: #2D6C29;"
-                "}"
-            )
-        else:
-            button.setStyleSheet(
-                "QPushButton {"
-                "   background-color: #F1F1F1;"
-                "   color: #333333;"
-                "   border: 1px solid #CCCCCC;"
-                "   border-radius: 3px;"
-                "   padding: 5px 15px;"
-                "}"
-                "QPushButton:hover {"
-                "   background-color: #E5E5E5;"
-                "}"
-                "QPushButton:pressed {"
-                "   background-color: #D9D9D9;"
-                "}"
-            )
+            button.setProperty("class", "accent")
 
         button.clicked.connect(callback)
         self.button_layout.addWidget(button)
@@ -1449,7 +1355,7 @@ class FinishPage(BasePage):
 
         # 添加结果消息
         self.result_label = QLabel(get_installer_metadata()["short_name"]+" 已经成功安装到本机。")
-        self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #4BA348;")
+        self.result_label.setProperty("class", "success")
         self.result_label.setAlignment(Qt.AlignCenter)
 
         # 添加提示文本
@@ -1467,10 +1373,12 @@ class FinishPage(BasePage):
     def set_result(self, success):
         if success:
             self.result_label.setText(get_installer_metadata()["short_name"]+" 已经成功安装到本机。")
-            self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #4BA348;")
+            self.result_label.setProperty("class", "success")
         else:
             self.result_label.setText("安装失败，请检查错误信息后重试。")
-            self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #FF0000;")
+            self.result_label.setProperty("class", "error")
+        self.result_label.style().unpolish(self.result_label)
+        self.result_label.style().polish(self.result_label)
 
     def on_finish(self):
         self.parent.close()
@@ -1552,9 +1460,8 @@ class InstallerWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
 
-    # 设置应用程序字体
-    font = QFont("Microsoft YaHei UI", 9)
-    app.setFont(font)
+    # 应用 WinUI 3 主题（自动检测深色/浅色模式）
+    theme.apply_theme(app)
 
     window = InstallerWindow()
     window.show()

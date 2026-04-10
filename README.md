@@ -19,6 +19,7 @@ Pack your application files into the specified structure and Universal Installer
 ```
 ├── main.py              # Main GUI application and installation logic
 ├── uninstaller.py       # Uninstaller GUI application
+├── theme.py             # WinUI 3-style theming with dark/light mode auto-detection
 ├── build.py             # Build script for packaging with PyInstaller
 ├── metadata.json        # Installer configuration (name, version, UI assets, etc.)
 ├── requirements.txt     # Python dependencies
@@ -50,8 +51,8 @@ Each component in `items.json` supports the following attributes:
 
 ## Requirements
 
-- Python 3.13+
-- Windows (uses `winreg`, `ctypes` for admin elevation)
+- Python 3.9+
+- Windows 10+ (PySide6 / Qt 6 minimum OS requirement)
 - Dependencies listed in `requirements.txt`
 
 ## Usage
@@ -69,4 +70,4 @@ The uninstaller reads this manifest to present a component selection tree.
 
 - Select which components to remove
 - If the **core component** (defined by `main_item` in `metadata.json`) is removed, the Windows registry entries are also cleaned up
-- After partial uninstall, the manifest is updated to reflect the remaining components        
+- After partial uninstall, the manifest is updated to reflect the remaining components                

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtGui import QIcon, QFont
 from PySide6.QtCore import Qt, QThread, Signal
+import theme
 
 WINDOW_SIZE = (640, 480)
 MANIFEST_NAME = "install_manifest.json"
@@ -169,12 +170,12 @@ class UninstallerWindow(QMainWindow):
 
         # 标题
         title = QLabel(f"{self.program_name} - 卸载程序")
-        title.setStyleSheet("font-size: 14pt; font-weight: bold;")
+        title.setProperty("class", "title")
         title.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title)
 
         subtitle = QLabel("请选择要卸载的组件：")
-        subtitle.setStyleSheet("font-size: 10pt; color: #666;")
+        subtitle.setProperty("class", "subtitle")
         main_layout.addWidget(subtitle)
 
         # 组件树
@@ -193,6 +194,7 @@ class UninstallerWindow(QMainWindow):
         self.log_area = QTextEdit()
         self.log_area.setReadOnly(True)
         self.log_area.setMaximumHeight(120)
+        self.log_area.setProperty("class", "log")
         progress_layout.addWidget(self.progress_bar)
         progress_layout.addWidget(self.log_area)
         self.progress_group.setVisible(False)
@@ -202,16 +204,13 @@ class UninstallerWindow(QMainWindow):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         self.uninstall_btn = QPushButton("卸载选中组件(U)")
-        self.uninstall_btn.setStyleSheet(
-            "QPushButton { background-color: #d9534f; color: white; "
-            "padding: 8px 20px; border: none; border-radius: 4px; font-weight: bold; }"
-            "QPushButton:hover { background-color: #c9302c; }"
-        )
+        self.uninstall_btn.setProperty("class", "danger")
+        self.uninstall_btn.setMinimumSize(100, 32)
         self.uninstall_btn.clicked.connect(self.on_uninstall)
         btn_layout.addWidget(self.uninstall_btn)
 
         self.close_btn = QPushButton("关闭(C)")
-        self.close_btn.setStyleSheet("padding: 8px 20px;")
+        self.close_btn.setMinimumSize(100, 32)
         self.close_btn.clicked.connect(self.close)
         btn_layout.addWidget(self.close_btn)
         main_layout.addLayout(btn_layout)
@@ -334,8 +333,9 @@ class UninstallerWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
-    font = QFont("Microsoft YaHei UI", 9)
-    app.setFont(font)
+
+    # 应用 WinUI 3 主题（自动检测深色/浅色模式）
+    theme.apply_theme(app)
 
     window = UninstallerWindow()
     window.show()
