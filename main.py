@@ -505,7 +505,7 @@ class LicensePage(BasePage):
             with open(get_installer_metadata()["license_file"], "r", encoding="utf-8") as f:
                 self.license_text.setText(f.read())
         except:
-            self.license_text.setText("许可协议文件未找到。\n一般意味着此工具为 All Rights Reserved 协议。")
+            self.license_text.setText("许可协议文件未找到。\n这一般意味着此工具很可能为 All Rights Reserved 协议。\n请注意无论如何此安装程序为 MIT 协议，经过修改也应附带原始协议文件。")
 
         # 添加提示文本
         tip_label = QLabel("要阅读协议的其余部分，请使用滚动条浏览。")
