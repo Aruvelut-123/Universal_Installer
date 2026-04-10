@@ -610,7 +610,7 @@ class ComponentsPage(BasePage):
             if item["required"]:
                 if file_not_found:
                     main_item.setText(0, item["name"]+" (未找到对应文件)")
-					main_item.setCheckState(0, Qt.Unchecked)
+                    main_item.setCheckState(0, Qt.Unchecked)
                 else:
                     main_item.setText(0, item["name"] + " (必选)")
                 main_item.setFlags(main_item.flags() & ~Qt.ItemIsEnabled)
@@ -618,7 +618,7 @@ class ComponentsPage(BasePage):
                 if file_not_found:
                     main_item.setText(0, item["name"] + " (未找到对应文件)")
                     main_item.setFlags(main_item.flags() & ~Qt.ItemIsEnabled)
-					main_item.setCheckState(0, Qt.Unchecked)
+                    main_item.setCheckState(0, Qt.Unchecked)
                 else:
                     main_item.setText(0, item["name"])
             main_item.setData(0, Qt.UserRole, item["id"])
