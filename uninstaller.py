@@ -1,7 +1,6 @@
 import json
 import os
 import sys
-import shutil
 import winreg
 import ctypes
 
@@ -79,8 +78,13 @@ class UninstallThread(QThread):
                             os.remove(full_path)
                             self.progress_updated.emit(0, f"  已删除文件: {full_path}")
                         elif os.path.isdir(full_path):
-                            shutil.rmtree(full_path)
-                            self.progress_updated.emit(0, f"  已删除目录: {full_path}")
+                            # Use os.rmdir to only remove empty directories
+                            # (safe for partial uninstall — won't delete other components' files)
+                            try:
+                                os.rmdir(full_path)
+                                self.progress_updated.emit(0, f"  已删除空目录: {full_path}")
+                            except OSError:
+                                self.progress_updated.emit(0, f"  跳过非空目录: {full_path}")
                     except Exception as e:
                         self.progress_updated.emit(0, f"  删除失败: {full_path} ({e})")
 

@@ -221,19 +221,23 @@ class InstallThread(QThread):
         try:
             if archive_type == "zip":
                 with zipfile.ZipFile(archive_name, "r") as archive:
-                    extracted_paths = [os.path.join(in_path, n) for n in archive.namelist()]
+                    extracted_paths = [os.path.join(in_path, n) for n in archive.namelist()
+                                       if not n.endswith("/")]
                     archive.extractall(in_path)
             elif archive_type == "rar":
                 with rarfile.RarFile(archive_name, "r") as archive:
-                    extracted_paths = [os.path.join(in_path, n) for n in archive.namelist()]
+                    extracted_paths = [os.path.join(in_path, n) for n in archive.namelist()
+                                       if not n.endswith("/")]
                     archive.extractall(in_path)
             elif archive_type == "7z":
                 with py7zr.SevenZipFile(archive_name, "r") as archive:
-                    extracted_paths = [os.path.join(in_path, n) for n in archive.getnames()]
+                    extracted_paths = [os.path.join(in_path, n) for n in archive.getnames()
+                                       if not n.endswith("/")]
                     archive.extractall(in_path)
             elif archive_type == "tar":
-                with tarfile.TarFile(archive_name, "r") as archive:
-                    extracted_paths = [os.path.join(in_path, n) for n in archive.getnames()]
+                with tarfile.open(archive_name, "r:*") as archive:
+                    extracted_paths = [os.path.join(in_path, n) for n in archive.getnames()
+                                       if not n.endswith("/")]
                     archive.extractall(in_path)
             else:
                 return []
