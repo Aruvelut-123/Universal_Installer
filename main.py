@@ -595,7 +595,7 @@ class ComponentsPage(BasePage):
                         file_not_found = True
                         break
 
-			if "disabled" in item:
+            if "disabled" in item:
                 if item["disabled"]:
                     main_item.setFlags(main_item.flags() & ~Qt.ItemIsEnabled)
             if item["checked"]:
