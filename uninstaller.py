@@ -5,14 +5,14 @@ import shutil
 import winreg
 import ctypes
 
-from PySide6.QtWidgets import (
+from PySide2.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QMessageBox, QTreeWidget, QTreeWidgetItem,
     QProgressBar, QTextEdit, QGroupBox, QFrame
 )
-from PySide6.QtGui import QIcon, QFont
-from PySide6.QtCore import Qt, QThread, Signal
-import theme
+from PySide2.QtGui import QIcon, QFont
+from PySide2.QtCore import Qt, QThread, Signal
+from qfluentwidgets import setTheme, Theme
 
 WINDOW_SIZE = (640, 480)
 MANIFEST_NAME = "install_manifest.json"
@@ -170,12 +170,12 @@ class UninstallerWindow(QMainWindow):
 
         # 标题
         title = QLabel(f"{self.program_name} - 卸载程序")
-        title.setProperty("class", "title")
+        title.setStyleSheet("font-size: 14pt; font-weight: bold;")
         title.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title)
 
         subtitle = QLabel("请选择要卸载的组件：")
-        subtitle.setProperty("class", "subtitle")
+        subtitle.setStyleSheet("font-size: 10pt; color: #666;")
         main_layout.addWidget(subtitle)
 
         # 组件树
@@ -194,7 +194,7 @@ class UninstallerWindow(QMainWindow):
         self.log_area = QTextEdit()
         self.log_area.setReadOnly(True)
         self.log_area.setMaximumHeight(120)
-        self.log_area.setProperty("class", "log")
+        self.log_area.setStyleSheet("font-family: Consolas, monospace;")
         progress_layout.addWidget(self.progress_bar)
         progress_layout.addWidget(self.log_area)
         self.progress_group.setVisible(False)
@@ -204,7 +204,10 @@ class UninstallerWindow(QMainWindow):
         btn_layout = QHBoxLayout()
         btn_layout.addStretch()
         self.uninstall_btn = QPushButton("卸载选中组件(U)")
-        self.uninstall_btn.setProperty("class", "danger")
+        self.uninstall_btn.setStyleSheet(
+            "QPushButton { background-color: #d9534f; color: white; "
+            "padding: 8px 20px; border: none; border-radius: 4px; font-weight: bold; }"
+            "QPushButton:hover { background-color: #c9302c; }")
         self.uninstall_btn.setMinimumSize(100, 32)
         self.uninstall_btn.clicked.connect(self.on_uninstall)
         btn_layout.addWidget(self.uninstall_btn)
@@ -238,9 +241,9 @@ class UninstallerWindow(QMainWindow):
         for comp_id, meta in top_items.items():
             name = meta.get("name", comp_id)
             tree_item = QTreeWidgetItem(self.component_tree, [name])
-            tree_item.setData(0, Qt.ItemDataRole.UserRole, comp_id)
+            tree_item.setData(0, Qt.UserRole, comp_id)
             is_required = meta.get("required", False)
-            tree_item.setCheckState(0, Qt.CheckState.Checked)
+            tree_item.setCheckState(0, Qt.Checked)
             tree_items_map[comp_id] = tree_item
 
         for parent_id, children in child_items.items():
@@ -251,8 +254,8 @@ class UninstallerWindow(QMainWindow):
                     tree_item = QTreeWidgetItem(parent_tree_item, [name])
                 else:
                     tree_item = QTreeWidgetItem(self.component_tree, [name])
-                tree_item.setData(0, Qt.ItemDataRole.UserRole, comp_id)
-                tree_item.setCheckState(0, Qt.CheckState.Checked)
+                tree_item.setData(0, Qt.UserRole, comp_id)
+                tree_item.setCheckState(0, Qt.Checked)
                 tree_items_map[comp_id] = tree_item
 
         self.component_tree.expandAll()
@@ -262,8 +265,8 @@ class UninstallerWindow(QMainWindow):
         checked = []
 
         def collect(item):
-            if item.checkState(0) == Qt.CheckState.Checked:
-                comp_id = item.data(0, Qt.ItemDataRole.UserRole)
+            if item.checkState(0) == Qt.Checked:
+                comp_id = item.data(0, Qt.UserRole)
                 if comp_id:
                     checked.append(comp_id)
             for i in range(item.childCount()):
@@ -295,10 +298,10 @@ class UninstallerWindow(QMainWindow):
 
         reply = QMessageBox.question(
             self, "确认卸载", msg,
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
         )
-        if reply != QMessageBox.StandardButton.Yes:
+        if reply != QMessageBox.Yes:
             return
 
         # 开始卸载
@@ -334,12 +337,12 @@ class UninstallerWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
 
-    # 应用 WinUI 3 主题（自动检测深色/浅色模式）
-    theme.apply_theme(app)
+    # 应用 WinUI 3 主题（自动跟随系统深色/浅色模式）
+    setTheme(Theme.AUTO)
 
     window = UninstallerWindow()
     window.show()
-    sys.exit(app.exec())
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":

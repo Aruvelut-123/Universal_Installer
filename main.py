@@ -10,16 +10,16 @@ import zipfile
 import rarfile
 import py7zr
 import tarfile
-import theme
 
-from PySide6.QtWidgets import (
+from PySide2.QtWidgets import (
     QApplication, QMainWindow, QWidget, QStackedWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QTextEdit, QCheckBox, QLineEdit, QFileDialog,
     QProgressBar, QGroupBox, QFrame, QMessageBox, QTreeWidget,
     QTreeWidgetItem
 )
-from PySide6.QtGui import QPixmap, QIcon, QFont
-from PySide6.QtCore import Qt, QThread, Signal, QSize
+from PySide2.QtGui import QPixmap, QIcon, QFont
+from PySide2.QtCore import Qt, QThread, Signal, QSize
+from qfluentwidgets import setTheme, Theme
 metadata : dict = {}
 installer_metadata : dict = {}
 
@@ -370,14 +370,14 @@ class BasePage(QWidget):
             self.left_frame = QFrame()
             self.left_frame.setFixedWidth(200)
             self.left_layout = QVBoxLayout(self.left_frame)
-            self.left_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.left_layout.setAlignment(Qt.AlignCenter)
 
             # 加载卡通图片
             self.character_label = QLabel()
             pixmap = QPixmap(get_installer_metadata()["left_pic"])
             if not pixmap.isNull():
-                self.character_label.setPixmap(pixmap.scaled(170, 340, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            self.character_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.character_label.setPixmap(pixmap.scaled(170, 340, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.character_label.setAlignment(Qt.AlignCenter)
             self.left_layout.addWidget(self.character_label)
 
         # 右侧区域 - 内容区域
@@ -396,20 +396,20 @@ class BasePage(QWidget):
             pixmap = QPixmap(get_installer_metadata()["header_pic"])
             if not pixmap.isNull():
                 self.header.setPixmap(
-                    pixmap.scaled(150, 57, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            self.header.setAlignment(Qt.AlignmentFlag.AlignLeft)
+                    pixmap.scaled(150, 57, Qt.IgnoreAspectRatio, Qt.SmoothTransformation))
+            self.header.setAlignment(Qt.AlignLeft)
 
         # 添加标题
         self.title_label = QLabel()
-        title_font = QFont("Microsoft YaHei UI", 12, QFont.Weight.Bold)
+        title_font = QFont("Microsoft YaHei UI", 12, QFont.Bold)
         self.title_label.setFont(title_font)
-        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_label.setAlignment(Qt.AlignCenter)
 
         # 副标题
         self.subtitle_label = QLabel()
         subtitle_font = QFont("Microsoft YaHei UI", 9)
         self.subtitle_label.setFont(subtitle_font)
-        self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.subtitle_label.setAlignment(Qt.AlignCenter)
         self.subtitle_label.setWordWrap(True)
 
         # 添加到布局
@@ -435,8 +435,8 @@ class BasePage(QWidget):
         self.footer_label = QLabel(get_installer_metadata()["footer_info"])
         footer_font = QFont("Microsoft YaHei UI", 8)
         self.footer_label.setFont(footer_font)
-        self.footer_label.setProperty("class", "footer")
-        self.footer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.footer_label.setStyleSheet("color: #666666; font-size: 8pt;")
+        self.footer_label.setAlignment(Qt.AlignCenter)
 
         # 添加到布局
         self.right_layout.addLayout(self.button_layout)
@@ -461,8 +461,7 @@ class BasePage(QWidget):
         button.setMinimumSize(100, 32)
 
         if style == "primary":
-            button.setProperty("class", "accent")
-        # Default buttons use the global QSS from theme.py
+            button.setStyleSheet("background-color: #0078D4; color: white; border: none; border-radius: 4px; padding: 6px 20px;")
 
         button.clicked.connect(callback)
         self.button_layout.addWidget(button)
@@ -486,7 +485,7 @@ class WelcomePage(BasePage):
 
         content_label = QLabel(content_text)
         content_label.setFont(QFont("Microsoft YaHei UI", 9))
-        content_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        content_label.setAlignment(Qt.AlignCenter)
         content_label.setWordWrap(True)
 
         self.content_layout.addStretch(1)
@@ -577,7 +576,7 @@ class ComponentsPage(BasePage):
         tip_label.setStyleSheet("font-size: 9pt; margin-bottom: 10px;")
 
         self.components_list = QTreeWidget()
-        self.components_list.setSelectionMode(QTreeWidget.SelectionMode.MultiSelection)
+        self.components_list.setSelectionMode(QTreeWidget.MultiSelection)
         self.components_list.setHeaderHidden(True)
         self.components_list.setColumnCount(1)
         self.components_list.setMouseTracking(True)  # 启用鼠标跟踪
@@ -592,7 +591,7 @@ class ComponentsPage(BasePage):
                 main_item = QTreeWidgetItem()
             else:
                 main_item = QTreeWidgetItem(self.components_list)
-            main_item.setFlags(main_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            main_item.setFlags(main_item.flags() | Qt.ItemIsUserCheckable)
             if item["files"] is not None:
                 for file in item["files"]:
                     path = file.replace("/", "\\")
@@ -616,30 +615,30 @@ class ComponentsPage(BasePage):
                     main_item.setText(0, item["name"]+" (未找到对应文件)")
                 else:
                     main_item.setText(0, item["name"] + " (必选)")
-                main_item.setFlags(main_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                main_item.setFlags(main_item.flags() & ~Qt.ItemIsEnabled)
             else:
                 if file_not_found:
                     main_item.setText(0, item["name"] + " (未找到对应文件)")
-                    main_item.setFlags(main_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                    main_item.setFlags(main_item.flags() & ~Qt.ItemIsEnabled)
                 else:
                     main_item.setText(0, item["name"])
             if "disabled" in item:
                 if item["disabled"]:
-                    main_item.setFlags(main_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                    main_item.setFlags(main_item.flags() & ~Qt.ItemIsEnabled)
             if item["checked"]:
                 if "part_checked" in item:
                     if item["part_checked"]:
-                        main_item.setCheckState(0, Qt.CheckState.PartiallyChecked)
+                        main_item.setCheckState(0, Qt.PartiallyChecked)
                     else:
-                        main_item.setCheckState(0, Qt.CheckState.Checked)
+                        main_item.setCheckState(0, Qt.Checked)
                 else:
-                    main_item.setCheckState(0, Qt.CheckState.Checked)
-            else: main_item.setCheckState(0, Qt.CheckState.Unchecked)
-            main_item.setData(0, Qt.ItemDataRole.UserRole, item["id"])
+                    main_item.setCheckState(0, Qt.Checked)
+            else: main_item.setCheckState(0, Qt.Unchecked)
+            main_item.setData(0, Qt.UserRole, item["id"])
             if item["after"] is not None:
                 for item2 in metadata["items"]:
                     if item2["id"] == item["after"]:
-                        self.components_list.findItems(item2["name"], Qt.MatchFlag.MatchContains, 0)[0].addChild(main_item)
+                        self.components_list.findItems(item2["name"], Qt.MatchContains, 0)[0].addChild(main_item)
                         break
 
         # 空间信息
@@ -703,8 +702,8 @@ class ComponentsPage(BasePage):
         self.parent.selected_components = {}
         for i in range(self.components_list.topLevelItemCount()):
             item = self.components_list.topLevelItem(i)
-            key = item.data(0, Qt.ItemDataRole.UserRole)
-            state = item.checkState(0) == Qt.CheckState.Checked
+            key = item.data(0, Qt.UserRole)
+            state = item.checkState(0) == Qt.Checked
 
             # 对于父项目，只保存其自身状态
             self.parent.selected_components[key] = state
@@ -712,8 +711,8 @@ class ComponentsPage(BasePage):
             # 检查子项目
             for j in range(item.childCount()):
                 child = item.child(j)
-                child_key = child.data(0, Qt.ItemDataRole.UserRole)
-                child_state = child.checkState(0) == Qt.CheckState.Checked
+                child_key = child.data(0, Qt.UserRole)
+                child_state = child.checkState(0) == Qt.Checked
                 self.parent.selected_components[child_key] = child_state
 
         self.parent.need_space = self.need_space
@@ -723,7 +722,7 @@ class ComponentsPage(BasePage):
         self.parent.cancel_installation()
 
     def on_item_hovered(self, item):
-        component_key = item.data(0, Qt.ItemDataRole.UserRole)
+        component_key = item.data(0, Qt.UserRole)
         metadata = get_metadata()
         description = ""
 
@@ -746,7 +745,7 @@ class ComponentsPage(BasePage):
             # 设置所有子项目的状态与父项目一致
             for i in range(item.childCount()):
                 child = item.child(i)
-                if child.flags() & Qt.ItemFlag.ItemIsEnabled:
+                if child.flags() & Qt.ItemIsEnabled:
                     child.setCheckState(0, item.checkState(0))
 
             # 重新连接信号
@@ -757,9 +756,9 @@ class ComponentsPage(BasePage):
         size = 0
         for meta_item in get_metadata()["items"]:
             for component in self.find_items_recursive(self.components_list, meta_item["name"]):
-                if component.checkState(0) == Qt.CheckState.Checked:
+                if component.checkState(0) == Qt.Checked:
                     for inner_item in get_metadata()["items"]:
-                        if inner_item["id"] == component.data(0, Qt.ItemDataRole.UserRole):
+                        if inner_item["id"] == component.data(0, Qt.UserRole):
                             if inner_item["files"] is not None:
                                 for file in inner_item["files"]:
                                     file_type = ""
@@ -848,7 +847,7 @@ class ComponentsPage(BasePage):
     def find_component_by_id(self, component_id):
         # 递归搜索QTreeWidget中匹配ID的项目
         def search(item):
-            if item.data(0, Qt.ItemDataRole.UserRole) == component_id:
+            if item.data(0, Qt.UserRole) == component_id:
                 return item
             for i in range(item.childCount()):
                 result = search(item.child(i))
@@ -863,14 +862,14 @@ class ComponentsPage(BasePage):
         return None
 
     @staticmethod
-    def find_items_recursive(tree, text, column=0, match_flag=Qt.MatchFlag.MatchContains):
+    def find_items_recursive(tree, text, column=0, match_flag=Qt.MatchContains):
         def search(items, results):
             for item in items:
                 item_text = item.text(column)
                 # Check for a match based on the specified flag
                 if (
-                        (match_flag == Qt.MatchFlag.MatchContains and text in item_text) or
-                        (match_flag == Qt.MatchFlag.MatchExactly and item_text == text)
+                        (match_flag == Qt.MatchContains and text in item_text) or
+                        (match_flag == Qt.MatchExactly and item_text == text)
                 ):
                     results.append(item)
                 # Recursively search children
@@ -895,12 +894,12 @@ class ComponentsPage(BasePage):
             incompat_list = items.get('incompatible', [])
             if component_id in incompat_list:
                 tree_item = self.find_component_by_id(items["id"])
-                if tree_item and tree_item.checkState(0) == Qt.CheckState.Checked:
+                if tree_item and tree_item.checkState(0) == Qt.Checked:
                     return True
             if items["id"] == component_id:
                 for incompat_id in items.get('incompatible', []):
                     tree_item = self.find_component_by_id(incompat_id)
-                    if tree_item and tree_item.checkState(0) == Qt.CheckState.Checked:
+                    if tree_item and tree_item.checkState(0) == Qt.Checked:
                         return True
         return False
 
@@ -912,21 +911,21 @@ class ComponentsPage(BasePage):
         return component_id
 
     def on_item_changed(self, item, column):
-        component_key = item.data(0, Qt.ItemDataRole.UserRole)
+        component_key = item.data(0, Qt.UserRole)
 
         # 暂时断开信号避免递归调用
         self.components_list.itemChanged.disconnect(self.on_item_changed)
 
         # 仅当项目被选中时处理依赖
-        if item.checkState(0) == Qt.CheckState.Checked:
+        if item.checkState(0) == Qt.Checked:
             for items in get_metadata()["items"]:
                 if items["id"] == component_key:
                     # 获取组件的依赖项列表
                     dependencies = items.get('dependencies', [])
                     for dependency_id in dependencies:
                         dep_item = self.find_component_by_id(dependency_id)
-                        if dep_item and dep_item.checkState(0) != Qt.CheckState.Checked:
-                            dep_item.setCheckState(0, Qt.CheckState.Checked)
+                        if dep_item and dep_item.checkState(0) != Qt.Checked:
+                            dep_item.setCheckState(0, Qt.Checked)
                     break
 
             # 处理不兼容组件
@@ -935,7 +934,7 @@ class ComponentsPage(BasePage):
                 incompat_item = self.find_component_by_id(incompat_id)
                 if incompat_item is None:
                     continue
-                if incompat_item.checkState(0) == Qt.CheckState.Checked:
+                if incompat_item.checkState(0) == Qt.Checked:
                     # 两个不兼容组件都被选中，弹窗让用户选择
                     current_name = self.get_component_name(component_key)
                     other_name = self.get_component_name(incompat_id)
@@ -946,26 +945,26 @@ class ComponentsPage(BasePage):
                         f"「{current_name}」与「{other_name}」不兼容，不能同时安装。\n\n"
                         f"选择「是」保留「{current_name}」，\n"
                         f"选择「否」保留「{other_name}」。",
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                        QMessageBox.StandardButton.Yes
+                        QMessageBox.Yes | QMessageBox.No,
+                        QMessageBox.Yes
                     )
                     self.components_list.itemChanged.disconnect(self.on_item_changed)
-                    if reply == QMessageBox.StandardButton.Yes:
+                    if reply == QMessageBox.Yes:
                         # 保留当前组件，取消另一个
-                        incompat_item.setCheckState(0, Qt.CheckState.Unchecked)
-                        incompat_item.setFlags(incompat_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                        incompat_item.setCheckState(0, Qt.Unchecked)
+                        incompat_item.setFlags(incompat_item.flags() & ~Qt.ItemIsEnabled)
                     else:
                         # 保留另一个，取消当前组件
-                        item.setCheckState(0, Qt.CheckState.Unchecked)
-                        item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                        item.setCheckState(0, Qt.Unchecked)
+                        item.setFlags(item.flags() & ~Qt.ItemIsEnabled)
                         # 当前组件已被取消，跳出循环
                         break
                 else:
                     # 不兼容组件未被选中，禁用它
-                    incompat_item.setCheckState(0, Qt.CheckState.Unchecked)
-                    incompat_item.setFlags(incompat_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
+                    incompat_item.setCheckState(0, Qt.Unchecked)
+                    incompat_item.setFlags(incompat_item.flags() & ~Qt.ItemIsEnabled)
 
-        elif item.checkState(0) == Qt.CheckState.Unchecked:
+        elif item.checkState(0) == Qt.Unchecked:
             # 取消选中时，重新启用被此组件禁用的不兼容组件
             incompatible_ids = self.get_incompatible_ids(component_key)
             for incompat_id in incompatible_ids:
@@ -981,7 +980,7 @@ class ComponentsPage(BasePage):
                             meta_disabled = meta_item.get("disabled", False)
                             break
                     if not meta_disabled:
-                        incompat_item.setFlags(incompat_item.flags() | Qt.ItemFlag.ItemIsEnabled)
+                        incompat_item.setFlags(incompat_item.flags() | Qt.ItemIsEnabled)
 
         # 当项目状态改变时调用
         if item.parent() is not None:
@@ -993,18 +992,18 @@ class ComponentsPage(BasePage):
             any_checked = False
             for i in range(parent.childCount()):
                 child = parent.child(i)
-                if child.checkState(0) == Qt.CheckState.Checked:
+                if child.checkState(0) == Qt.Checked:
                     any_checked = True
                 else:
                     all_checked = False
 
             # 设置父项目的状态
             if all_checked:
-                parent.setCheckState(0, Qt.CheckState.Checked)
+                parent.setCheckState(0, Qt.Checked)
             elif any_checked:
-                parent.setCheckState(0, Qt.CheckState.PartiallyChecked)
+                parent.setCheckState(0, Qt.PartiallyChecked)
             else:
-                parent.setCheckState(0, Qt.CheckState.Unchecked)
+                parent.setCheckState(0, Qt.Unchecked)
 
         # 重新连接信号
         self.components_list.itemChanged.connect(self.on_item_changed)
@@ -1024,7 +1023,7 @@ class DirectoryPage(BasePage):
         if "select_directory_tip" in get_installer_metadata():
             # 添加提示文本
             tip_label = QLabel(get_installer_metadata()["select_directory_tip"])
-            tip_label.setProperty("class", "subtitle")
+            tip_label.setStyleSheet("font-size: 10pt; color: #666666;")
             path_layout.addWidget(tip_label)
 
         self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path"]
@@ -1207,14 +1206,12 @@ class DirectoryPage(BasePage):
                 free_space = usage.free / (1024 * 1024)  # MB
                 self.available_label.setText(f"可用空间: {free_space:.1f} MB")
                 if free_space > 15.6:
-                    self.available_label.setProperty("class", "success")
+                    self.available_label.setStyleSheet("font-size: 9pt; font-weight: bold; margin: 5px; color: #107C10;")
                 else:
-                    self.available_label.setProperty("class", "error")
-                self.available_label.style().unpolish(self.available_label)
-                self.available_label.style().polish(self.available_label)
+                    self.available_label.setStyleSheet("font-size: 9pt; font-weight: bold; margin: 5px; color: #D13438;")
             except:
                 self.available_label.setText("可用空间: 未知")
-                self.available_label.setProperty("class", "subtitle")
+                self.available_label.setStyleSheet("font-size: 9pt; font-weight: bold; margin: 5px; color: #666666;")
 
     def on_install(self):
         path = self.path_input.text()
@@ -1269,7 +1266,7 @@ class InstallPage(QWidget):
 
         self.log_area = QTextEdit()
         self.log_area.setReadOnly(True)
-        self.log_area.setProperty("class", "log")
+        self.log_area.setStyleSheet("font-family: Consolas, monospace;")
 
         logs_layout.addWidget(self.log_area)
         main_layout.addWidget(logs_group)
@@ -1291,7 +1288,7 @@ class InstallPage(QWidget):
 
         # 底部信息
         footer_label = QLabel(get_installer_metadata()["footer_info"])
-        footer_label.setProperty("class", "footer")
+        footer_label.setStyleSheet("color: #666666; font-size: 8pt;")
         footer_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(footer_label)
 
@@ -1303,7 +1300,7 @@ class InstallPage(QWidget):
         button.setMinimumSize(100, 32)
 
         if style == "primary":
-            button.setProperty("class", "accent")
+            button.setStyleSheet("background-color: #0078D4; color: white; border: none; border-radius: 4px; padding: 6px 20px;")
 
         button.clicked.connect(callback)
         self.button_layout.addWidget(button)
@@ -1355,7 +1352,7 @@ class FinishPage(BasePage):
 
         # 添加结果消息
         self.result_label = QLabel(get_installer_metadata()["short_name"]+" 已经成功安装到本机。")
-        self.result_label.setProperty("class", "success")
+        self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #107C10;")
         self.result_label.setAlignment(Qt.AlignCenter)
 
         # 添加提示文本
@@ -1373,12 +1370,10 @@ class FinishPage(BasePage):
     def set_result(self, success):
         if success:
             self.result_label.setText(get_installer_metadata()["short_name"]+" 已经成功安装到本机。")
-            self.result_label.setProperty("class", "success")
+            self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #107C10;")
         else:
             self.result_label.setText("安装失败，请检查错误信息后重试。")
-            self.result_label.setProperty("class", "error")
-        self.result_label.style().unpolish(self.result_label)
-        self.result_label.style().polish(self.result_label)
+            self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #D13438;")
 
     def on_finish(self):
         self.parent.close()
@@ -1460,12 +1455,12 @@ class InstallerWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
 
-    # 应用 WinUI 3 主题（自动检测深色/浅色模式）
-    theme.apply_theme(app)
+    # 应用 WinUI 3 主题（自动跟随系统深色/浅色模式）
+    setTheme(Theme.AUTO)
 
     window = InstallerWindow()
     window.show()
-    sys.exit(app.exec())
+    sys.exit(app.exec_())
 
 
 if __name__ == "__main__":
