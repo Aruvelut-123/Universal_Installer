@@ -134,9 +134,10 @@ class InstallThread(QThread):
                                         file_type = "7z"
                                     elif ext == "tar":
                                         file_type = "tar"
-                                    elif ext == "txt":
-                                        shutil.copy(file, in_path)
-                                        self.installed_paths[component].append(in_path)
+                                    elif ext in ("txt", "exe"):
+                                        dest = os.path.join(in_path, os.path.basename(file))
+                                        shutil.copy(file, dest)
+                                        self.installed_paths[component].append(dest)
                                         continue
                                     else:
                                         continue
@@ -198,10 +199,9 @@ class InstallThread(QThread):
                                             self.installed_paths[component].extend(extracted)
             time.sleep(2)
 
-            # 3. 保存安装清单和卸载程序
-            self.progress_updated.emit(92, "正在生成卸载程序...")
+            # 3. 保存安装清单
+            self.progress_updated.emit(92, "正在保存安装清单...")
             self.save_install_manifest()
-            self.copy_uninstaller()
 
             ## 4. 注册表操作
             #self.progress_updated.emit(95, "正在更新系统设置...")
@@ -282,25 +282,6 @@ class InstallThread(QThread):
         except Exception as e:
             self.progress_updated.emit(0, f"保存安装清单失败: {e}")
 
-    def copy_uninstaller(self):
-        """将卸载程序复制到安装目录"""
-        # 查找卸载程序（与安装程序同目录或打包后的资源目录）
-        uninstaller_name = "Uninstall.exe"
-        src_candidates = [
-            os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), uninstaller_name),
-            os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "uninstaller.exe"),
-        ]
-        dest_path = os.path.join(self.path, uninstaller_name)
-        for src in src_candidates:
-            if os.path.exists(src):
-                try:
-                    shutil.copy2(src, dest_path)
-                    self.progress_updated.emit(0, "卸载程序已复制")
-                    return
-                except Exception as e:
-                    self.progress_updated.emit(0, f"复制卸载程序失败: {e}")
-                    return
-        self.progress_updated.emit(0, "警告: 未找到卸载程序文件，跳过")
 
     def create_registry_entries(self):
         # 创建安装信息注册表项
@@ -772,6 +753,10 @@ class ComponentsPage(BasePage):
                                         file_type = "7z"
                                     elif ext == "tar":
                                         file_type = "tar"
+                                    elif ext in ("txt", "exe"):
+                                        if os.path.exists(file):
+                                            size += os.path.getsize(file)
+                                        continue
                                     else:
                                         continue
                                     file = file.replace("/", "\\")

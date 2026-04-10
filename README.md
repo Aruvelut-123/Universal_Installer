@@ -64,9 +64,17 @@ Each component in `items.json` supports the following attributes:
 
 ## Uninstaller
 
-During installation, the installer saves an `install_manifest.json` to the install directory and copies `Uninstall.exe` alongside it.  
-The uninstaller reads this manifest to present a component selection tree.
+The uninstaller is distributed as part of the core component. During installation, it is copied from `pack/Uninstall.exe` to the install directory alongside `install_manifest.json`.
+
+**Important:** You must place the built `Uninstall.exe` in the `pack/` folder before building or running the installer, otherwise the uninstaller will not be included in the installation. Build it with:
+
+```bash
+pyinstaller --onefile --windowed --name Uninstall uninstaller.py
+copy dist\Uninstall.exe pack\
+```
+
+The uninstaller reads `install_manifest.json` to present a component selection tree.
 
 - Select which components to remove
 - If the **core component** (defined by `main_item` in `metadata.json`) is removed, the Windows registry entries are also cleaned up
-- After partial uninstall, the manifest is updated to reflect the remaining components                    
+- After partial uninstall, the manifest is updated to reflect the remaining components                          
