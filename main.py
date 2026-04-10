@@ -595,19 +595,7 @@ class ComponentsPage(BasePage):
                         file_not_found = True
                         break
 
-            if item["required"]:
-                if file_not_found:
-                    main_item.setText(0, item["name"]+" (未找到对应文件)")
-                else:
-                    main_item.setText(0, item["name"] + " (必选)")
-                main_item.setFlags(main_item.flags() & ~Qt.ItemIsEnabled)
-            else:
-                if file_not_found:
-                    main_item.setText(0, item["name"] + " (未找到对应文件)")
-                    main_item.setFlags(main_item.flags() & ~Qt.ItemIsEnabled)
-                else:
-                    main_item.setText(0, item["name"])
-            if "disabled" in item:
+			if "disabled" in item:
                 if item["disabled"]:
                     main_item.setFlags(main_item.flags() & ~Qt.ItemIsEnabled)
             if item["checked"]:
@@ -619,6 +607,20 @@ class ComponentsPage(BasePage):
                 else:
                     main_item.setCheckState(0, Qt.Checked)
             else: main_item.setCheckState(0, Qt.Unchecked)
+            if item["required"]:
+                if file_not_found:
+                    main_item.setText(0, item["name"]+" (未找到对应文件)")
+					main_item.setCheckState(0, Qt.Unchecked)
+                else:
+                    main_item.setText(0, item["name"] + " (必选)")
+                main_item.setFlags(main_item.flags() & ~Qt.ItemIsEnabled)
+            else:
+                if file_not_found:
+                    main_item.setText(0, item["name"] + " (未找到对应文件)")
+                    main_item.setFlags(main_item.flags() & ~Qt.ItemIsEnabled)
+					main_item.setCheckState(0, Qt.Unchecked)
+                else:
+                    main_item.setText(0, item["name"])
             main_item.setData(0, Qt.UserRole, item["id"])
             if item["after"] is not None:
                 for item2 in metadata["items"]:
