@@ -22,7 +22,7 @@ jobs:
           pip install pytest
       - name: Run tests
         run: |
-          python -m pytest tests/ -v
+          python -m pytest tests/ -v --tb=short --junitxml=test-results.xml
       - name: Build installer binary
         run: |
           pyinstaller --onefile --windowed main.py
