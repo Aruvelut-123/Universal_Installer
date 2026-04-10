@@ -26,17 +26,10 @@ jobs:
           if (Test-Path requirements.txt -PathType Leaf) { pip install -r requirements.txt }
           pip install pytest
       - name: Run tests
-        id: run-tests
         shell: bash
         run: |
-          python -m pytest tests/ -v --tb=short 2>&1 | tee test-output.txt
-          echo "test_result<<EOF" >> "${GITHUB_OUTPUT}"
-          cat test-output.txt >> "${GITHUB_OUTPUT}"
-          echo "EOF" >> "${GITHUB_OUTPUT}"
-      - name: Display test results
-        shell: bash
-        run: |
-          echo "${{ steps.run-tests.outputs.test_result }}"
+          python -m pytest tests/ -v --tb=short --junitxml=test-results.xml
+          python tests/format_results.py test-results.xml
       - name: Build installer binary
         run: |
           pyinstaller --onefile --windowed main.py
