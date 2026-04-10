@@ -133,7 +133,7 @@ class InstallThread(QThread):
                                     elif ext == "7z":
                                         file_type = "7z"
                                     elif ext == "tar":
-                                        file_type = "tar.gz"
+                                        file_type = "tar"
                                     elif ext == "txt":
                                         shutil.copy(file, in_path)
                                         self.installed_paths[component].append(in_path)
@@ -164,7 +164,7 @@ class InstallThread(QThread):
                                             elif ext == "7z":
                                                 file_type = "7z"
                                             elif ext == "tar":
-                                                file_type = "tar.gz"
+                                                file_type = "tar"
                                             else:
                                                 continue
                                             file = file.replace("/", "\\")
@@ -190,7 +190,7 @@ class InstallThread(QThread):
                                             elif ext == "7z":
                                                 file_type = "7z"
                                             elif ext == "tar":
-                                                file_type = "tar.gz"
+                                                file_type = "tar"
                                             else:
                                                 continue
                                             file = file.replace("/", "\\")
@@ -771,7 +771,7 @@ class ComponentsPage(BasePage):
                                     elif ext == "7z":
                                         file_type = "7z"
                                     elif ext == "tar":
-                                        file_type = "tar.gz"
+                                        file_type = "tar"
                                     else:
                                         continue
                                     file = file.replace("/", "\\")
@@ -790,7 +790,7 @@ class ComponentsPage(BasePage):
                                             elif ext == "7z":
                                                 file_type = "7z"
                                             elif ext == "tar":
-                                                file_type = "tar.gz"
+                                                file_type = "tar"
                                             else:
                                                 continue
                                             file = file.replace("/", "\\")
@@ -808,7 +808,7 @@ class ComponentsPage(BasePage):
                                             elif ext == "7z":
                                                 file_type = "7z"
                                             elif ext == "tar":
-                                                file_type = "tar.gz"
+                                                file_type = "tar"
                                             else:
                                                 continue
                                             file = file.replace("/", "\\")
@@ -838,6 +838,14 @@ class ComponentsPage(BasePage):
             try:
                 with py7zr.SevenZipFile(file, 'r') as sevenzip_ref:
                     return sum(f.file_properties().get("uncompressed") for f in sevenzip_ref.files)
+            except Exception as e:
+                print(e)
+                return 0
+        elif file_type == "tar":
+            import tarfile
+            try:
+                with tarfile.open(file, 'r:*') as tar_ref:
+                    return sum(m.size for m in tar_ref.getmembers() if m.isfile())
             except Exception as e:
                 print(e)
                 return 0
@@ -913,11 +921,10 @@ class ComponentsPage(BasePage):
     def on_item_changed(self, item, column):
         component_key = item.data(0, Qt.UserRole)
 
-        # 暂时断开信号避免递归调用
-        self.components_list.itemChanged.disconnect(self.on_item_changed)
-
         # 仅当项目被选中时处理依赖
         if item.checkState(0) == Qt.Checked:
+            # 依赖处理：保持信号连接，让依赖项递归触发 on_item_changed
+            # 这样 A→B→C 的传递依赖能正确处理
             for items in get_metadata()["items"]:
                 if items["id"] == component_key:
                     # 获取组件的依赖项列表
@@ -928,7 +935,8 @@ class ComponentsPage(BasePage):
                             dep_item.setCheckState(0, Qt.Checked)
                     break
 
-            # 处理不兼容组件
+            # 处理不兼容组件 — 断开信号避免复杂的重入行为
+            self.components_list.itemChanged.disconnect(self.on_item_changed)
             incompatible_ids = self.get_incompatible_ids(component_key)
             for incompat_id in incompatible_ids:
                 incompat_item = self.find_component_by_id(incompat_id)
@@ -963,9 +971,12 @@ class ComponentsPage(BasePage):
                     # 不兼容组件未被选中，禁用它
                     incompat_item.setCheckState(0, Qt.Unchecked)
                     incompat_item.setFlags(incompat_item.flags() & ~Qt.ItemIsEnabled)
+            self.components_list.itemChanged.connect(self.on_item_changed)
 
         elif item.checkState(0) == Qt.Unchecked:
             # 取消选中时，重新启用被此组件禁用的不兼容组件
+            # 断开信号避免重入
+            self.components_list.itemChanged.disconnect(self.on_item_changed)
             incompatible_ids = self.get_incompatible_ids(component_key)
             for incompat_id in incompatible_ids:
                 incompat_item = self.find_component_by_id(incompat_id)
@@ -981,12 +992,14 @@ class ComponentsPage(BasePage):
                             break
                     if not meta_disabled:
                         incompat_item.setFlags(incompat_item.flags() | Qt.ItemIsEnabled)
+            self.components_list.itemChanged.connect(self.on_item_changed)
 
-        # 当项目状态改变时调用
+        # 当项目状态改变时调用 — 断开信号避免父↔子无限递归
         if item.parent() is not None:
             # 如果这是子项目，更新父项目的状态
             parent = item.parent()
 
+            self.components_list.itemChanged.disconnect(self.on_item_changed)
             # 检查所有子项目的状态
             all_checked = True
             any_checked = False
@@ -1004,9 +1017,7 @@ class ComponentsPage(BasePage):
                 parent.setCheckState(0, Qt.PartiallyChecked)
             else:
                 parent.setCheckState(0, Qt.Unchecked)
-
-        # 重新连接信号
-        self.components_list.itemChanged.connect(self.on_item_changed)
+            self.components_list.itemChanged.connect(self.on_item_changed)
 
 # 安装位置选择页面
 class DirectoryPage(BasePage):
