@@ -122,7 +122,7 @@ def get_app_dir():
     """
     if getattr(sys, 'frozen', False):
         # Get the directory containing the executable
-        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        exe_dir = os.getcwd()
         
         # macOS .app bundle special handling
         if sys.platform == 'darwin':
