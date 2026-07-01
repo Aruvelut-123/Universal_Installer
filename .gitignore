@@ -1,13 +1,8 @@
 .venv
-build
-dist
+.stfolder
+.idea
 pack
-main.spec
-items.json
-left.png
-header.png
-icon.ico
-*.7z
-*.log
+MOD
 *.zip
 test.py
+build main.bat

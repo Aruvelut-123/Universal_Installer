@@ -10,24 +10,103 @@ permissions:
   contents: read
 
 jobs:
-  build_for_windows:
+  build_windows:
     name: Build for Windows
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Python 3.13
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          if (Test-Path requirements.txt -PathType Leaf) { pip install -r requirements.txt }
-      - name: Build binary
+          pip install -r requirements.txt
+      - name: Build binary (Nuitka)
         run: |
-          pyinstaller --onefile --windowed main.py
+          python -m nuitka --onefile --windows-disable-console --include-module=vdf --windows-icon-from-ico=pack/icon.ico --enable-plugin=pyside6 --assume-yes-for-downloads main.py
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
-          name: installer windows.exe
-          path: ./dist/main.exe
+          name: installer-windows
+          path: ./main.exe
+
+  build_linux:
+    name: Build for Linux (AppImage)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install system dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y libegl1 libgl1 libopengl0 libxkbcommon0 libdbus-1-3 libfuse2
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Build binary (Nuitka)
+        run: |
+          python -m nuitka --onefile --include-module=vdf --enable-plugin=pyside6 --assume-yes-for-downloads main.py
+      - name: Prepare AppDir
+        run: |
+          mkdir -p AppDir/usr/bin
+          cp main.bin AppDir/usr/bin/BB+Installer
+          chmod +x AppDir/usr/bin/BB+Installer
+          python3 -c "from PIL import Image; img = Image.open('pack/icon.ico'); img.save('AppDir/icon.png')"
+          cat > AppDir/BB+Installer.desktop << 'DESKTOPEOF'
+          [Desktop Entry]
+          Name=BB+ Installer
+          Exec=BB+Installer
+          Icon=icon
+          Type=Application
+          Categories=Utility;
+          DESKTOPEOF
+      - name: Build AppImage
+        run: |
+          wget -nv "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
+          chmod +x appimagetool-x86_64.AppImage
+          ./appimagetool-x86_64.AppImage AppDir BB+Installer-x86_64.AppImage
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-linux
+          path: ./BB+Installer-x86_64.AppImage
+
+  build_macos:
+    name: Build for macOS (.app)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      - name: Convert icon to .icns
+        run: |
+          python3 -c "
+          from PIL import Image
+          img = Image.open('pack/icon.ico')
+          img.save('pack/icon.icns', format='ICNS')
+          print('icon.icns created')
+          "
+      - name: Build .app bundle (Nuitka)
+        run: |
+          python -m nuitka --onefile --macos-create-app-bundle --macos-app-icon=pack/icon.icns --include-module=vdf --enable-plugin=pyside6 --assume-yes-for-downloads main.py
+      - name: Codesign (ad-hoc)
+        run: |
+          codesign --force --deep --sign - main.app
+          echo "Ad-hoc signing done. Users will need to right-click → Open the first time."
+      - name: Archive .app for upload
+        run: |
+          ditto -c -k --keepParent main.app BB+Installer-macos.zip
+      - name: Upload .app
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-macos
+          path: ./BB+Installer-macos.zip

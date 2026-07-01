@@ -7,6 +7,8 @@
       "id": "main",
       "desc": "<b>BB+ 汉化包</b>: 主汉化程序，必选组件",
       "default_path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Baldi's Basics Plus",
+      "default_path_linux": "~\\.local\\share\\steam\\steamapps\\common\\Baldi's Basics Plus",
+      "default_path_macos": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Baldi's Basics Plus",
       "after": null,
       "dependencies": [],
       "files": [
@@ -115,25 +117,6 @@
       }
     },
     {
-      "name": "自定义主菜单API",
-      "required": false,
-      "checked": false,
-      "part_checked": false,
-      "id": "custom_mainmenus_api",
-      "desc": "<b>自定义主菜单API</b>: 用于自定义主菜单的模组",
-      "after": "other_mods",
-      "dependencies": [
-        "main",
-        "modding_api"
-      ],
-      "files": [
-        "pack/CustomMainMenusAPI.zip"
-      ],
-      "actions": {
-        "pack/CustomMainMenusAPI.zip": "{install_path}/BepInEx/plugins"
-      }
-    },
-    {
       "name": "Pixel的内部API",
       "required": false,
       "checked": false,
@@ -153,49 +136,120 @@
       }
     },
     {
-      "name": "新装饰+",
+      "name": "模组管理器",
       "required": false,
       "checked": false,
       "part_checked": false,
-      "id": "new_decorations_plus",
-      "desc": "<b>新装饰+</b>: 这个模组为关卡编辑器添加了五种以上的新装饰，让你的关卡布局更加美观！快来试试吧！",
+      "id": "mod_manager",
+      "desc": "<b>模组管理器</b>: 每次禁用模组都要从文件夹里删除文件，是不是很麻烦？现在你可以下载这个模组，直接在游戏里禁用模组，无需删除任何文件！它还能显示模组信息，并且允许你在不重启游戏的情况下下载模组。",
       "after": "other_mods",
       "dependencies": [
         "main",
-        "modding_api",
-        "level_loading_api",
-        "level_editor",
-        "pixel_internal_api"
+        "modding_api"
       ],
       "files": [
-        "pack/NDP.zip"
+        "pack/ModManager.zip"
       ],
       "actions": {
-        "pack/NDP.zip": "{install_path}"
+        "pack/ModManager.zip": "{install_path}/BepInEx/plugins"
       }
     },
     {
-      "name": "BBX",
+      "name": "Carnival Pack",
       "required": false,
       "checked": false,
       "part_checked": false,
-      "id": "baldis_basics_times",
-      "desc": "<b>Baldi's Baiscs Times</b>: 这款使用 BepInEx 制作的模组将超级学校升级成了巨型学校！它包含大量新内容，例如新角色​​、新物品、新事件，当然还有新建筑！",
+      "id": "carnival_pack",
+      "desc": "<b>Carnival Pack</b>: 哇！狂欢节来到了这里，现在又多了一个新角色（Zorpster）和一件新物品！（棉花糖",
+      "after": "other_mods",
+      "dependencies": [
+        "main",
+        "modding_api"
+      ],
+      "files": [
+        "pack/CarnivalPack.zip"
+      ],
+      "actions": {
+        "pack/CarnivalPack.zip": "{install_path}"
+      }
+    },
+    {
+      "name": "Modifiers Disaster! Plus",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "modifiers_disaster_plus",
+      "desc": "<b>Modifiers Disaster! Plus</b>: 这个模组添加了一些修改器，会以各种疯狂的方式改变游戏！有点像BBCR，但又不太一样……",
       "after": "other_mods",
       "dependencies": [
         "main",
         "modding_api",
-        "level_loading_api",
-        "level_editor",
-        "pixel_internal_api",
-        "new_decorations_plus",
-        "custom_mainmenus_api"
+        "pixel_internal_api"
       ],
       "files": [
-        "pack/BBX.zip"
+        "pack/Modifiers.zip"
       ],
       "actions": {
-        "pack/BBX.zip": "{install_path}"
+        "pack/Modifiers.zip": "{install_path}"
+      }
+    },
+    {
+      "name": "Micro Events!",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "micro_events",
+      "desc": "<b>Micro Events!</b>: 这个模组引入了微事件的概念！微事件是一个独立的系统，其中可能发生好事或坏事，目前已有超过100个微事件和10多种独特的贴纸，可以以各种意想不到的方式改变微事件的运作方式！希望您能玩得开心！因为制作这个模组花费了我大量的心血。",
+      "after": "other_mods",
+      "dependencies": [
+        "main",
+        "modding_api",
+        "pixel_internal_api"
+      ],
+      "files": [
+        "pack/MicroEvents.zip"
+      ],
+      "actions": {
+        "pack/MicroEvents.zip": "{install_path}"
+      }
+    },
+    {
+      "name": "可修改的游戏模式API",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "modded_modes_api",
+      "desc": "<b>可修改的游戏模式API</b>: 你的模组需要为游戏添加自定义界面或模式吗？这个 API 会让你的工作更轻松！",
+      "after": "other_mods",
+      "dependencies": [
+        "main"
+      ],
+      "files": [
+        "pack/MMAPI.zip"
+      ],
+      "actions": {
+        "pack/MMAPI.zip": "{install_path}/BepInEx/plugins"
+      }
+    },
+    {
+      "name": "Null Style",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "null_style",
+      "desc": "<b>Null Style</b>: 感受与 Null 随机生成的激烈战斗！Null 模式现已加入 BB+！",
+      "after": "other_mods",
+      "dependencies": [
+        "main",
+        "modding_api",
+        "pixel_internal_api",
+        "modded_mods_api"
+      ],
+      "files": [
+        "pack/NULLStyle.zip"
+      ],
+      "actions": {
+        "pack/NULLStyle.zip": "{install_path}"
       }
     },
     {

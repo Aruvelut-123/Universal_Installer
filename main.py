@@ -4,7 +4,6 @@ import platform
 import sys
 import shutil
 import time
-import winreg
 import ctypes
 import zipfile
 from operator import truediv
@@ -12,6 +11,41 @@ from operator import truediv
 import rarfile
 import py7zr
 import tarfile
+
+def get_app_dir():
+    """Return the directory where data files live (next to the app, not inside it).
+
+    Handles Nuitka --onefile on all platforms, AppImage, and macOS .app bundle.
+    """
+    if getattr(sys, 'frozen', False):
+        # AppImage: $APPIMAGE points to the .AppImage file itself
+        env_appimage = os.environ.get('APPIMAGE')
+        if env_appimage:
+            return os.path.dirname(env_appimage)
+
+        # Nuitka --onefile: $NUITKA_ONEFILE_PARENT is the dir containing the binary
+        parent = os.environ.get('NUITKA_ONEFILE_PARENT')
+        if parent:
+            # macOS .app bundle: binary lives in Whatever.app/Contents/MacOS/
+            # but data files sit next to the .app → walk up 3 levels
+            if sys.platform == 'darwin':
+                parts = parent.rstrip('/').split('/')
+                if (len(parts) >= 3
+                        and parts[-1] == 'MacOS'
+                        and parts[-2] == 'Contents'
+                        and parts[-3].endswith('.app')):
+                    return '/'.join(parts[:-3])
+            return parent
+
+        # Generic fallback (should rarely be reached)
+        return os.path.dirname(os.path.abspath(sys.argv[0]))
+
+    # Running as a plain script: directory containing main.py
+    return os.path.dirname(os.path.abspath(__file__))
+
+# Switch CWD immediately so every relative path below this line Just Works
+os.chdir(get_app_dir())
+
 from typing import override, Any
 
 from PySide6.QtWidgets import (
@@ -83,7 +117,10 @@ MAIN_ITEM : int = get_installer_metadata()["main_item"]
 # 检查管理员权限的函数
 def is_admin():
     try:
-        return ctypes.windll.shell32.IsUserAnAdmin()
+        if platform.system().lower() == "windows":
+            return ctypes.windll.shell32.IsUserAnAdmin()
+        else:
+            return True
     except:
         return False
 
@@ -193,10 +230,6 @@ class InstallThread(QThread):
                                             self.run_extract(file, file_type, in_path)
             time.sleep(2)
 
-            ## 4. 注册表操作
-            #self.progress_updated.emit(90, "正在更新系统设置...")
-            #self.create_registry_entries()
-
             self.success = True
             self.progress_updated.emit(100, "安装完成！")
         except Exception as e:
@@ -228,36 +261,6 @@ class InstallThread(QThread):
         except Exception as e:
             print(e)
             raise e
-
-    def create_registry_entries(self):
-        # 创建安装信息注册表项
-        try:
-            key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, REGISTRY_KEY)
-            winreg.SetValueEx(key, "", 0, winreg.REG_SZ, self.path)
-            winreg.CloseKey(key)
-        except:
-            pass
-
-        # 创建卸载注册表项
-        try:
-            uninstall_key = winreg.CreateKey(winreg.HKEY_LOCAL_MACHINE, UNINSTALL_REG_KEY)
-            winreg.SetValueEx(uninstall_key, "DisplayName", 0, winreg.REG_SZ, "BB+汉化")
-            winreg.SetValueEx(uninstall_key, "UninstallString", 0, winreg.REG_SZ,
-                              f'"{os.path.join(self.path, "Uninstall.exe")}"')
-            winreg.SetValueEx(uninstall_key, "InstallLocation", 0, winreg.REG_SZ, self.path)
-            winreg.SetValueEx(uninstall_key, "DisplayIcon", 0, winreg.REG_SZ, os.path.join(self.path, "icon.ico"))
-            winreg.SetValueEx(uninstall_key, "Publisher", 0, winreg.REG_SZ, "MEMZSystem32 & Baymaxawa")
-            winreg.SetValueEx(uninstall_key, "Readme", 0, winreg.REG_SZ, os.path.join(self.path, "readme.txt"))
-            winreg.SetValueEx(uninstall_key, "DisplayVersion", 0, winreg.REG_SZ, VERSION)
-            winreg.SetValueEx(uninstall_key, "NoModify", 0, winreg.REG_DWORD, 1)
-            winreg.SetValueEx(uninstall_key, "NoRepair", 0, winreg.REG_DWORD, 1)
-            winreg.SetValueEx(uninstall_key, "EstimatedSize", 0, winreg.REG_DWORD, 102400)  # 100MB
-            winreg.CloseKey(uninstall_key)
-        except PermissionError:
-            # 处理没有管理员权限的情况
-            self.progress_updated.emit(0, "警告: 无法写入注册表，可能缺少管理员权限")
-        except Exception as e:
-            self.progress_updated.emit(0, f"注册表错误: {str(e)}")
 
 
 # 基础页面模板
@@ -608,9 +611,11 @@ class ComponentsPage(BasePage):
             main_item.setFlags(main_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             if item["files"] is not None:
                 for file in item["files"]:
-                    path = file.replace("/", "\\")
-                    path = ".\\" + path
-                    if not os.path.exists(file):
+                    path = file.split("\\")
+                    r_path = os.getcwd()
+                    for p in path:
+                        r_path = os.path.join(r_path, p)
+                    if not os.path.exists(r_path):
                         file_not_found = True
                         break
             if "x86file" in item:
@@ -834,6 +839,11 @@ class ComponentsPage(BasePage):
 
     @staticmethod
     def get_archive_size(file, file_type) -> int:
+        path = file.split("\\")
+        r_path = os.getcwd()
+        for p in path:
+            r_path = os.path.join(r_path, p)
+        file = r_path
         if file_type == "zip":
             import zipfile
             try:
@@ -962,7 +972,25 @@ class DirectoryPage(BasePage):
             tip_label.setStyleSheet("font-size: 9pt; color: #4BA348; margin-bottom: 10px;")
             path_layout.addWidget(tip_label)
 
-        self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path"]
+        
+        if platform.system().lower() == "windows":
+            if "default_path" in get_metadata()["items"][MAIN_ITEM]:
+                self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path"]
+            else:
+                self.default_path = ""
+        elif platform.system().lower() == "linux":
+            if "default_path_linux" in get_metadata()["items"][MAIN_ITEM]:
+                self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path_linux"]
+            else:
+                self.default_path = ""
+        elif platform.system().lower() == "drawin":
+            if "default_path_macos" in get_metadata()["items"][MAIN_ITEM]:
+                self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path_macos"]
+            else:
+                self.default_path = ""
+        else:
+            print("Unsupported Operating System found: "+ platform.system().lower())
+            self.default_path = ""
 
         # 路径选择框
         path_form = QHBoxLayout()
@@ -1017,6 +1045,8 @@ class DirectoryPage(BasePage):
         
         self.parent.page_shown.connect(self.page_shown)
 
+        self.update_directory()
+
     def browse_directory(self):
         directory = QFileDialog.getExistingDirectory(
             self, "浏览文件夹", self.path_input.text(),
@@ -1030,6 +1060,7 @@ class DirectoryPage(BasePage):
 
     def update_directory(self):
         self.path_input.setText(self.detect_steam_path())
+        self.update_disk_space()
 
     def detect_steam_path(self):
         if not "game_name" in get_installer_metadata() or len(get_installer_metadata()["game_name"]) <= 0:
@@ -1077,6 +1108,7 @@ class DirectoryPage(BasePage):
         arch = platform.machine().lower()
         os_name = platform.system().lower()
         if os_name == "windows":
+            import winreg
             if arch == "amd64" or arch == "x86_64":
                 try:
                     key = winreg.OpenKey(
@@ -1103,8 +1135,38 @@ class DirectoryPage(BasePage):
                     return None
             else:
                 raise NotImplementedError("Not support arm system for now.")
-        else:
+        elif platform.system().lower() == "linux":
+            possible_paths = [
+                os.path.expanduser("~/.steam/root"), # 最佳：一个指向真实安装目录的符号链接
+                os.path.expanduser("~/.local/share/Steam"), # 官方 .deb 包及多数情况下的默认路径
+                os.path.expanduser("~/.steam/debian-installation") # Debian 系发行版的特定路径
+            ]
+            for path in possible_paths:
+                if os.path.exists(path):
+                    # 如果找到的路径是一个符号链接，我们可以选择跟随它找到真实目录
+                    if os.path.islink(path):
+                        real_path = os.path.realpath(path)
+                        print(f"找到 Steam 安装目录 (通过符号链接): {real_path}")
+                        return real_path
+                    else:
+                        print(f"找到 Steam 安装目录: {path}")
+                        return path
+            print("Steam文件夹不存在!")
             return None
+        elif platform.system().lower() == "drawin":
+            possible_paths = [
+                os.path.expanduser("~/Library/Application Support/Steam"),
+                "/Applications/Steam.app"
+            ]
+            for path in possible_paths:
+                if os.path.exists(path):
+                    print(f"找到 Steam 目录: {path}")
+                    return path
+            
+            print("未找到 Steam 安装目录!")
+            return None
+        else:
+            raise NotImplementedError("Not support other operating system for now.")
 
     def page_shown(self, name:str):
         if name == "directory":
@@ -1128,15 +1190,36 @@ class DirectoryPage(BasePage):
                 text += f"{size / TB:.2f} TB"
             self.required_label.setText(text)
 
-    def update_disk_space(self):
+    def _get_mount_point(self, path):
+        """获取路径所在的挂载点（Linux/macOS）"""
+        import os
         
+        path = os.path.abspath(path)
+        while path != '/':
+            if os.path.ismount(path):
+                return path
+            path = os.path.dirname(path)
+        return '/'
+
+    def update_disk_space(self):
         path = self.path_input.text()
         if path and os.path.exists(path):
-            drive = os.path.splitdrive(path)[0]
             try:
+                if platform.system().lower() == "windows":
+                    drive = os.path.splitdrive(path)[0]
+                elif platform.system().lower() == "linux":
+                    drive = self._get_mount_point(path)
+                elif platform.system().lower() == "drawin":
+                    drive = self._get_mount_point(path)
+                else:
+                    return
                 usage = shutil.disk_usage(drive)
                 free_space = usage.free / (1024 * 1024)  # MB
-                self.available_label.setText(f"可用空间: {free_space:.1f} MB")
+                if free_space >= 1024:
+                    free_space = free_space / 1024  # GB
+                    self.available_label.setText(f"可用空间: {free_space:.1f} GB")
+                else:
+                    self.available_label.setText(f"可用空间: {free_space:.1f} MB")
                 self.available_label.setStyleSheet(
                     "color: green; font-size: 9pt; font-weight: bold; margin: 5px;"
                     if free_space > 15.6
