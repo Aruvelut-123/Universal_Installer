@@ -79,13 +79,13 @@ jobs:
           cp main.bin AppDir/usr/bin/main
           chmod +x AppDir/usr/bin/main
           
-          # 复制 PySide6 和 Qt 依赖（只复制 .so 文件，不复制子目录）
+          # 复制 PySide6 和 Qt 依赖
           PYSIDE_PATH=$(python -c "import PySide6, os; print(os.path.dirname(PySide6.__file__))")
           if [ -d "$PYSIDE_PATH/Qt/lib" ]; then
             find $PYSIDE_PATH/Qt/lib -maxdepth 1 -name "*.so*" -exec cp {} AppDir/usr/lib/ \; 2>/dev/null || true
           fi
           
-          # 复制必要的系统库
+          # 复制必要的系统库 - 修正 cp 命令
           LIBRARIES=(
             "libxkbcommon.so.0"
             "libdbus-1.so.3"
@@ -118,13 +118,14 @@ jobs:
           )
           
           for lib in "${LIBRARIES[@]}"; do
-            find /usr/lib -name "$lib" 2>/dev/null | head -1 | xargs -r cp {} AppDir/usr/lib/ || true
+            # 使用 -exec cp 而不是 xargs，确保每个文件单独复制
+            find /usr/lib -name "$lib" 2>/dev/null -exec cp {} AppDir/usr/lib/ \; || true
           done
           
           # 设置 rpath
           patchelf --set-rpath '$ORIGIN/../lib' AppDir/usr/bin/main || true
           
-          # 创建 AppRun 脚本（关键！）
+          # 创建 AppRun 脚本
           cat > AppDir/AppRun << 'APPRUNEOF'
           #!/bin/bash
           SELF=$(readlink -f "$0")
@@ -138,7 +139,7 @@ jobs:
           export QML_IMPORT_PATH="$HERE/usr/lib/qt5/qml:$QML_IMPORT_PATH"
           export QML2_IMPORT_PATH="$HERE/usr/lib/qt5/qml:$QML2_IMPORT_PATH"
           
-          # 禁用 Qt 缩放（避免缩放问题）
+          # 禁用 Qt 缩放
           export QT_AUTO_SCREEN_SCALE_FACTOR=0
           export QT_SCALE_FACTOR=1
           
@@ -147,8 +148,14 @@ jobs:
           APPRUNEOF
           chmod +x AppDir/AppRun
           
-          # 创建图标
-          python3 -c "from PIL import Image; img = Image.open('pack/icon.ico'); img.save('AppDir/icon.png')"
+          # 创建图标 - 修正尺寸警告
+          python3 -c "
+          from PIL import Image
+          img = Image.open('pack/icon.ico')
+          # 确保图标是正方形，转换为 256x256 PNG
+          img = img.resize((256, 256))
+          img.save('AppDir/icon.png')
+          "
           
           # 创建 .desktop 文件
           cat > AppDir/main.desktop << 'DESKTOPEOF'
