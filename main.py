@@ -168,7 +168,11 @@ def get_metadata() -> dict:
     if metadata != {}:
         return metadata
     try:
-        with open(METADATA_PATH, "r", encoding='utf-8') as file:
+        temp = METADATA_PATH.split("\\")
+        rpath = os.getcwd()
+        for path in temp:
+            rpath = os.path.join(rpath, path)
+        with open(rpath, "r", encoding='utf-8') as file:
             metadata = json.load(file)
             return metadata
     except Exception as e:
@@ -319,7 +323,9 @@ class InstallThread(QThread):
         in_path = ""
         for path in temp:
             in_path = os.path.join(in_path, path)
-        self.progress_updated.emit(0, "正在解压文件" + archive_name + "...")
+        if platform.system().lower() != "windows":
+            in_path = "/" + in_path
+        self.progress_updated.emit(0, "正在解压文件" + archive_name + "到" + in_path)
         try:
             match archive_type:
                 case "zip":
