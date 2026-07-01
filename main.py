@@ -313,6 +313,10 @@ class InstallThread(QThread):
     def run_extract(self, archive_name, archive_type, in_path):
         self.progress_updated.emit(0, "正在解压文件" + archive_name + "...")
         try:
+            temp = in_path.split("\\")
+            in_path = os.getcwd()
+            for path in temp:
+                in_path = os.path.join(in_path, path)
             match archive_type:
                 case "zip":
                     with zipfile.ZipFile(archive_name, "r") as archive:
