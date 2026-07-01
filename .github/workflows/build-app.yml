@@ -125,27 +125,9 @@ jobs:
           # 设置 rpath
           patchelf --set-rpath '$ORIGIN/../lib' AppDir/usr/bin/main || true
           
-          # 创建 AppRun 脚本
-          cat > AppDir/AppRun << 'APPRUNEOF'
-          #!/bin/bash
-          SELF=$(readlink -f "$0")
-          HERE=${SELF%/*}
-          
-          # 设置库路径
-          export LD_LIBRARY_PATH="$HERE/usr/lib:$LD_LIBRARY_PATH"
-          
-          # Qt 环境变量
-          export QT_PLUGIN_PATH="$HERE/usr/lib/qt5/plugins:$QT_PLUGIN_PATH"
-          export QML_IMPORT_PATH="$HERE/usr/lib/qt5/qml:$QML_IMPORT_PATH"
-          export QML2_IMPORT_PATH="$HERE/usr/lib/qt5/qml:$QML2_IMPORT_PATH"
-          
-          # 禁用 Qt 缩放
-          export QT_AUTO_SCREEN_SCALE_FACTOR=0
-          export QT_SCALE_FACTOR=1
-          
-          # 执行主程序
-          exec "$HERE/usr/bin/main" "$@"
-          APPRUNEOF
+          # 下载标准的 AppRun（避免架构检测问题）
+          wget -nv "https://github.com/AppImage/AppImageKit/releases/download/continuous/AppRun-x86_64"
+          cp AppRun-x86_64 AppDir/AppRun
           chmod +x AppDir/AppRun
           
           # 创建图标 - 修正尺寸警告
@@ -179,7 +161,7 @@ jobs:
         run: |
           wget -nv "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
           chmod +x appimagetool-x86_64.AppImage
-          ./appimagetool-x86_64.AppImage -v AppDir main.AppImage
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage -v AppDir main.AppImage
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
