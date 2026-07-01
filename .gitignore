@@ -7,3 +7,6 @@ MOD
 test.py
 build main.bat
 build.py
+*.exe
+*.AppImage
+*.app
