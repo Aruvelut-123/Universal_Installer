@@ -50,16 +50,21 @@ jobs:
       - name: Build binary (Nuitka)
         run: |
           python -m nuitka --onefile --include-module=vdf --enable-plugin=pyside6 --assume-yes-for-downloads main.py
+      - name: Upload Binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-linux-binary
+          path: ./main.bin
       - name: Prepare AppDir
         run: |
           mkdir -p AppDir/usr/bin
-          cp main.bin AppDir/usr/bin/BB+Installer
-          chmod +x AppDir/usr/bin/BB+Installer
+          cp main.bin AppDir/usr/bin/main
+          chmod +x AppDir/usr/bin/main
           python3 -c "from PIL import Image; img = Image.open('pack/icon.ico'); img.save('AppDir/icon.png')"
-          cat > AppDir/BB+Installer.desktop << 'DESKTOPEOF'
+          cat > AppDir/main.desktop << 'DESKTOPEOF'
           [Desktop Entry]
-          Name=BB+ Installer
-          Exec=BB+Installer
+          Name=ChinesePack
+          Exec=main
           Icon=icon
           Type=Application
           Categories=Utility;
@@ -68,12 +73,12 @@ jobs:
         run: |
           wget -nv "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
           chmod +x appimagetool-x86_64.AppImage
-          ./appimagetool-x86_64.AppImage AppDir BB+Installer-x86_64.AppImage
+          ./appimagetool-x86_64.AppImage AppDir main.AppImage
       - name: Upload AppImage
         uses: actions/upload-artifact@v4
         with:
-          name: installer-linux
-          path: ./BB+Installer-x86_64.AppImage
+          name: installer-linux-AppImage
+          path: ./main.AppImage
 
   build_macos:
     name: Build for macOS (.app)
