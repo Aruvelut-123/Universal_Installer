@@ -6,3 +6,4 @@ MOD
 *.zip
 test.py
 build main.bat
+build.py
