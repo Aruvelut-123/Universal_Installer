@@ -211,244 +211,238 @@ class InstallThread(QThread):
         self.path = path
         self.components = components
         self.success = False
+        print(f"[DEBUG] InstallThread初始化: path={path}, components={components}")
+
+    def _get_platform_files_key(self):
+        """根据当前平台和架构返回对应的文件键名"""
+        system = platform.system().lower()
+        machine = platform.machine()
+        
+        print(f"[DEBUG] 检测平台: system={system}, machine={machine}")
+        
+        platform_map = {
+            'windows': {
+                'AMD64': 'winx64file',
+                'x86': 'winx86file'
+            },
+            'linux': {
+                'x86_64': 'linuxx64file',
+                'i386': 'linuxx86file'
+            },
+            'darwin': {
+                'default': 'macfile'
+            }
+        }
+        
+        if system in platform_map:
+            if system == 'darwin':
+                return 'macfile'
+            return platform_map[system].get(machine)
+        
+        print(f"[DEBUG] 不支持的平台: {system}/{machine}")
+        return None
+
+    def _get_file_info(self, file, item):
+        """获取文件的目标路径和类型"""
+        print(f"[DEBUG] 处理文件: {file}")
+        
+        if file not in item.get("actions", {}):
+            print(f"[DEBUG] 文件 {file} 不在actions中，跳过")
+            return None, None
+        
+        # 构建目标路径
+        in_path = item["actions"][file]
+        print(f"[DEBUG] 原始actions路径: {in_path}")
+        in_path = in_path.replace("{install_path}", self.path)
+        in_path = in_path.replace("/", "\\")
+        print(f"[DEBUG] 替换后的路径: {in_path}")
+        
+        # 使用os.path.join规范化路径
+        temp = in_path.split("\\")
+        in_path = os.path.join(*temp)  # 更简洁的方式
+        print(f"[DEBUG] os.path.join后的路径: {in_path}")
+        
+        # 非Windows系统添加前缀
+        if platform.system().lower() != "windows":
+            in_path = "/" + in_path
+            print(f"[DEBUG] 非Windows系统，添加前缀: {in_path}")
+        
+        # 获取文件类型
+        result = file.split(".")
+        file_type = self._get_file_type(result[1] if len(result) > 1 else "")
+        print(f"[DEBUG] 文件类型: {file_type}")
+        
+        return in_path, file_type
+
+    def _get_file_type(self, extension):
+        """根据扩展名返回文件类型"""
+        type_map = {
+            'zip': 'zip',
+            'rar': 'rar',
+            '7z': '7z',
+            'tar': 'tar.gz',
+            'txt': 'txt'
+        }
+        return type_map.get(extension, None)
+
+    def _handle_file(self, file, item, is_platform_file=False):
+        """统一处理单个文件"""
+        print(f"[DEBUG] 处理文件: {file}, is_platform_file={is_platform_file}")
+        
+        # 处理txt文件
+        if file.endswith('.txt'):
+            in_path, _ = self._get_file_info(file, item)
+            if in_path:
+                print(f"[DEBUG] txt文件直接复制: {file} -> {in_path}")
+                shutil.copy(file, in_path)
+            return
+        
+        # 获取文件信息
+        in_path, file_type = self._get_file_info(file, item)
+        if not in_path or not file_type:
+            print(f"[DEBUG] 无法获取文件信息，跳过")
+            return
+        
+        # 规范化文件路径
+        file_path = file.replace("/", "\\")
+        print(f"[DEBUG] 调用run_extract: archive={file_path}, type={file_type}, in_path={in_path}")
+        self.run_extract(file_path, file_type, in_path)
+
+    def _process_files(self, files, item):
+        """处理文件列表"""
+        if not files:
+            return
+        
+        print(f"[DEBUG] 处理文件列表: {files}")
+        for file in files:
+            self._handle_file(file, item)
+
+    def _process_component(self, component):
+        """处理单个组件"""
+        print(f"[DEBUG] 开始安装组件: {component}")
+        
+        metadata = get_metadata()
+        print(f"[DEBUG] 获取到元数据，items数量: {len(metadata['items']) if metadata else 0}")
+        
+        for item in metadata["items"]:
+            if item["id"] != component:
+                continue
+                
+            print(f"[DEBUG] 找到匹配的组件: {component}")
+            
+            # 1. 处理通用文件
+            if item.get("files"):
+                print(f"[DEBUG] 组件 {component} 有通用文件列表: {item['files']}")
+                self._process_files(item["files"], item)
+            
+            # 2. 处理平台特定文件
+            platform_key = self._get_platform_files_key()
+            if platform_key and platform_key in item:
+                print(f"[DEBUG] 处理平台特定文件: {platform_key}")
+                self._process_files(item[platform_key], item)
+            
+            # 如果平台特定文件找不到，尝试查找替代方案
+            elif platform_key:
+                # Windows可能同时有32位和64位，尝试另一个
+                if platform.system().lower() == "windows":
+                    alt_key = 'winx86file' if platform_key == 'winx64file' else 'winx64file'
+                    if alt_key in item:
+                        print(f"[DEBUG] 尝试使用替代架构: {alt_key}")
+                        self._process_files(item[alt_key], item)
+                # Linux类似
+                elif platform.system().lower() == "linux":
+                    alt_key = 'linuxx86file' if platform_key == 'linuxx64file' else 'linuxx64file'
+                    if alt_key in item:
+                        print(f"[DEBUG] 尝试使用替代架构: {alt_key}")
+                        self._process_files(item[alt_key], item)
 
     def run(self):
+        print("[DEBUG] run()方法开始执行")
         try:
             # 0. 准备工作
+            print("[DEBUG] 开始准备安装环境...")
             self.progress_updated.emit(5, "正在准备安装环境...")
+            
             if not os.path.exists(self.path):
+                print(f"[DEBUG] 路径不存在，创建目录: {self.path}")
                 os.makedirs(self.path, exist_ok=True)
+            else:
+                print(f"[DEBUG] 路径已存在: {self.path}")
 
             time.sleep(2)
+            print("[DEBUG] 准备工作完成，开始安装组件")
+            
             # 2. 安装组件
-            step = 95 / len(self.components)
+            total_components = len([c for c in self.components if self.components[c]])
+            step = 95 / total_components if total_components > 0 else 0
+            print(f"[DEBUG] 需要安装的组件数: {total_components}, 每个组件进度步长: {step}")
+            
             for component in self.components:
+                print(f"[DEBUG] 处理组件: {component}, 是否选中: {self.components[component]}")
                 if self.components[component]:
-                    self.progress_updated.emit(step, "正在安装组件"+component+"...")
-                    for item in get_metadata()["items"]:
-                        if item["id"] == component:
-                            if item["files"] is not None:
-                                for file in item["files"]:
-                                    in_path : str = ""
-                                    file_type = ""
-                                    result = file.split(".")
-                                    if file in item["actions"]:
-                                        in_path = item["actions"][file]
-                                        in_path = in_path.replace("{install_path}", self.path)
-                                        in_path = in_path.replace("/", "\\")
-                                    else:
-                                        continue
-                                    temp = in_path.split("\\")
-                                    in_path = ""
-                                    for path in temp:
-                                        in_path = os.path.join(in_path, path)
-                                    if platform.system().lower() != "windows":
-                                        in_path = "/" + in_path
-                                    match result[1]:
-                                        case "zip":
-                                            file_type = "zip"
-                                        case "rar":
-                                            file_type = "rar"
-                                        case "7z":
-                                            file_type = "7z"
-                                        case "tar":
-                                            file_type = "tar.gz"
-                                        case "txt":
-                                            shutil.copy(file, in_path)
-                                            continue
-                                        case _:
-                                            continue
-                                    file = file.replace("/", "\\")
-                                    self.run_extract(file, file_type, in_path)
-                            if "winx86file" in item or "winx64file" in item or "linuxx86file" in item or "linuxx64file" in item or "macfile" in item:
-                                if platform.system().lower() == "windows":
-                                    if platform.machine() == "AMD64":
-                                        if "winx64file" in item:
-                                            for file in item["winx64file"]:
-                                                in_path: str = ""
-                                                file_type = ""
-                                                result = file.split(".")
-                                                if file in item["actions"]:
-                                                    in_path = item["actions"][file]
-                                                    in_path = in_path.replace("{install_path}", self.path)
-                                                    in_path = in_path.replace("/", "\\")
-                                                else:
-                                                    continue
-                                                temp = in_path.split("\\")
-                                                in_path = ""
-                                                for path in temp:
-                                                    in_path = os.path.join(in_path, path)
-                                                match result[1]:
-                                                    case "zip":
-                                                        file_type = "zip"
-                                                    case "rar":
-                                                        file_type = "rar"
-                                                    case "7z":
-                                                        file_type = "7z"
-                                                    case "tar":
-                                                        file_type = "tar.gz"
-                                                    case _:
-                                                        continue
-                                                file = file.replace("/", "\\")
-                                                self.run_extract(file, file_type, in_path)
-                                    elif platform.machine() == "x86":
-                                        if "winx86file" in item:
-                                            for file in item["winx86file"]:
-                                                in_path: str = ""
-                                                file_type = ""
-                                                result = file.split(".")
-                                                if file in item["actions"]:
-                                                    in_path = item["actions"][file]
-                                                    in_path = in_path.replace("{install_path}", self.path)
-                                                    in_path = in_path.replace("/", "\\")
-                                                else:
-                                                    continue
-                                                temp = in_path.split("\\")
-                                                in_path = ""
-                                                for path in temp:
-                                                    in_path = os.path.join(in_path, path)
-                                                match result[1]:
-                                                    case "zip":
-                                                        file_type = "zip"
-                                                    case "rar":
-                                                        file_type = "rar"
-                                                    case "7z":
-                                                        file_type = "7z"
-                                                    case "tar":
-                                                        file_type = "tar.gz"
-                                                    case _:
-                                                        continue
-                                                file = file.replace("/", "\\")
-                                                self.run_extract(file, file_type, in_path)
-                                elif platform.system().lower() == "linux":
-                                    if platform.machine() == "x86_64":
-                                        if "linuxx64file" in item:
-                                            for file in item["linuxx64file"]:
-                                                in_path: str = ""
-                                                file_type = ""
-                                                result = file.split(".")
-                                                if file in item["actions"]:
-                                                    in_path = item["actions"][file]
-                                                    in_path = in_path.replace("{install_path}", self.path)
-                                                    in_path = in_path.replace("/", "\\")
-                                                else:
-                                                    continue
-                                                temp = in_path.split("\\")
-                                                in_path = ""
-                                                for path in temp:
-                                                    in_path = os.path.join(in_path, path)
-                                                if platform.system().lower() != "windows":
-                                                    in_path = "/" + in_path
-                                                match result[1]:
-                                                    case "zip":
-                                                        file_type = "zip"
-                                                    case "rar":
-                                                        file_type = "rar"
-                                                    case "7z":
-                                                        file_type = "7z"
-                                                    case "tar":
-                                                        file_type = "tar.gz"
-                                                    case _:
-                                                        continue
-                                                file = file.replace("/", "\\")
-                                                self.run_extract(file, file_type, in_path)
-                                    elif platform.machine() == "i386":
-                                        if "linuxx86file" in item:
-                                            for file in item["linuxx86file"]:
-                                                in_path: str = ""
-                                                file_type = ""
-                                                result = file.split(".")
-                                                if file in item["actions"]:
-                                                    in_path = item["actions"][file]
-                                                    in_path = in_path.replace("{install_path}", self.path)
-                                                    in_path = in_path.replace("/", "\\")
-                                                else:
-                                                    continue
-                                                temp = in_path.split("\\")
-                                                in_path = ""
-                                                for path in temp:
-                                                    in_path = os.path.join(in_path, path)
-                                                in_path = "/" + in_path
-                                                match result[1]:
-                                                    case "zip":
-                                                        file_type = "zip"
-                                                    case "rar":
-                                                        file_type = "rar"
-                                                    case "7z":
-                                                        file_type = "7z"
-                                                    case "tar":
-                                                        file_type = "tar.gz"
-                                                    case _:
-                                                        continue
-                                                file = file.replace("/", "\\")
-                                                self.run_extract(file, file_type, in_path)
-                                elif platform.system().lower() == "drawin":
-                                    if "macfile" in item:
-                                        for file in item["macfile"]:
-                                            in_path: str = ""
-                                            file_type = ""
-                                            result = file.split(".")
-                                            if file in item["actions"]:
-                                                in_path = item["actions"][file]
-                                                in_path = in_path.replace("{install_path}", self.path)
-                                                in_path = in_path.replace("/", "\\")
-                                            else:
-                                                continue
-                                            temp = in_path.split("\\")
-                                            in_path = ""
-                                            for path in temp:
-                                                in_path = os.path.join(in_path, path)
-                                            in_path = "/" + in_path
-                                            match result[1]:
-                                                case "zip":
-                                                    file_type = "zip"
-                                                case "rar":
-                                                    file_type = "rar"
-                                                case "7z":
-                                                    file_type = "7z"
-                                                case "tar":
-                                                    file_type = "tar.gz"
-                                                case _:
-                                                    continue
-                                            file = file.replace("/", "\\")
-                                            self.run_extract(file, file_type, in_path)
+                    self.progress_updated.emit(step, f"正在安装组件{component}...")
+                    self._process_component(component)
+            
             time.sleep(2)
             self.success = True
+            print("[DEBUG] 所有组件安装成功")
             self.progress_updated.emit(100, "安装完成！")
+            
         except Exception as e:
-            print(e)
+            print(f"[ERROR] 安装过程中发生异常: {e}")
+            import traceback
+            traceback.print_exc()
             self.progress_updated.emit(0, f"安装失败: {str(e)}")
         finally:
+            print(f"[DEBUG] run()方法结束，success={self.success}")
             self.finished.emit(self.success)
 
     def run_extract(self, archive_name, archive_type, in_path):
+        print(f"[DEBUG] run_extract开始: archive_name={archive_name}, archive_type={archive_type}, in_path={in_path}")
+        
+        # 构建完整路径
         temp = archive_name.split("\\")
         archive_name = os.getcwd()
-        for path in temp:
-            archive_name = os.path.join(archive_name, path)
-        self.progress_updated.emit(0, "正在解压文件" + archive_name + "到" + in_path)
+        archive_name = os.path.join(archive_name, *temp)  # 更简洁
+        print(f"[DEBUG] 构建完整压缩包路径: {archive_name}")
+        print(f"[DEBUG] 检查压缩包是否存在: {os.path.exists(archive_name)}")
+        print(f"[DEBUG] 目标目录是否存在: {os.path.exists(in_path)}")
+        
+        # 确保目标目录存在
+        if not os.path.exists(in_path):
+            print(f"[DEBUG] 目标目录不存在，创建: {in_path}")
+            os.makedirs(in_path, exist_ok=True)
+        
+        self.progress_updated.emit(0, f"正在解压文件{archive_name}到{in_path}")
+        
         try:
-            match archive_type:
-                case "zip":
-                    with zipfile.ZipFile(archive_name, "r") as archive:
-                        archive.extractall(in_path)
-                case "rar":
-                    with rarfile.RarFile(archive_name, "r") as archive:
-                        archive.extractall(in_path)
-                case "7z":
-
-                    with py7zr.SevenZipFile(archive_name, "r") as archive:
-                        archive.extractall(in_path)
-                case "tar":
-                    with tarfile.TarFile(archive_name, "r") as archive:
-                        archive.extractall(in_path)
-                case _:
-                    return
+            print(f"[DEBUG] 开始解压，类型: {archive_type}")
+            
+            # 解压器映射
+            extractors = {
+                'zip': lambda f, p: zipfile.ZipFile(f, "r").extractall(p),
+                'rar': lambda f, p: rarfile.RarFile(f, "r").extractall(p),
+                '7z': lambda f, p: py7zr.SevenZipFile(f, "r").extractall(p),
+                'tar.gz': lambda f, p: tarfile.TarFile(f, "r").extractall(p),
+                'tar': lambda f, p: tarfile.TarFile(f, "r").extractall(p)
+            }
+            
+            if archive_type in extractors:
+                print(f"[DEBUG] 使用解压器: {archive_type}")
+                extractors[archive_type](archive_name, in_path)
+                print(f"[DEBUG] 解压完成: {archive_name}")
+            else:
+                print(f"[DEBUG] 未知的压缩类型: {archive_type}, 跳过")
+                return
+            
+            print(f"[DEBUG] 解压成功: {archive_name} -> {in_path}")
             self.progress_updated.emit(0, f"解压成功: {archive_name}")
+            
         except Exception as e:
-            print(e)
+            print(f"[ERROR] 解压失败: {e}")
+            import traceback
+            traceback.print_exc()
             raise e
-
 
 # 基础页面模板
 class BasePage(QWidget):
