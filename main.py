@@ -237,6 +237,16 @@ class InstallThread(QThread):
                                         in_path = in_path.replace("/", "\\")
                                     else:
                                         continue
+                                    temp = file.split("\\")
+                                    file = os.getcwd()
+                                    for path in temp:
+                                        file = os.path.join(file, path)
+                                    temp = in_path.split("\\")
+                                    in_path = ""
+                                    for path in temp:
+                                        in_path = os.path.join(in_path, path)
+                                    if platform.system().lower() != "windows":
+                                        in_path = "/" + in_path
                                     match result[1]:
                                         case "zip":
                                             file_type = "zip"
@@ -266,6 +276,16 @@ class InstallThread(QThread):
                                                 in_path = in_path.replace("/", "\\")
                                             else:
                                                 continue
+                                            temp = file.split("\\")
+                                            file = os.getcwd()
+                                            for path in temp:
+                                                file = os.path.join(file, path)
+                                            temp = in_path.split("\\")
+                                            in_path = ""
+                                            for path in temp:
+                                                in_path = os.path.join(in_path, path)
+                                            if platform.system().lower() != "windows":
+                                                in_path = "/" + in_path
                                             match result[1]:
                                                 case "zip":
                                                     file_type = "zip"
@@ -291,6 +311,16 @@ class InstallThread(QThread):
                                                 in_path = in_path.replace("/", "\\")
                                             else:
                                                 continue
+                                            temp = file.split("\\")
+                                            file = os.getcwd()
+                                            for path in temp:
+                                                file = os.path.join(file, path)
+                                            temp = in_path.split("\\")
+                                            in_path = ""
+                                            for path in temp:
+                                                in_path = os.path.join(in_path, path)
+                                            if platform.system().lower() != "windows":
+                                                in_path = "/" + in_path
                                             match result[1]:
                                                 case "zip":
                                                     file_type = "zip"
@@ -305,7 +335,6 @@ class InstallThread(QThread):
                                             file = file.replace("/", "\\")
                                             self.run_extract(file, file_type, in_path)
             time.sleep(2)
-
             self.success = True
             self.progress_updated.emit(100, "安装完成！")
         except Exception as e:
@@ -315,16 +344,6 @@ class InstallThread(QThread):
             self.finished.emit(self.success)
 
     def run_extract(self, archive_name, archive_type, in_path):
-        temp = archive_name.split("\\")
-        archive_name = os.getcwd()
-        for path in temp:
-            archive_name = os.path.join(archive_name, path)
-        temp = in_path.split("\\")
-        in_path = ""
-        for path in temp:
-            in_path = os.path.join(in_path, path)
-        if platform.system().lower() != "windows":
-            in_path = "/" + in_path
         self.progress_updated.emit(0, "正在解压文件" + archive_name + "到" + in_path)
         try:
             match archive_type:
