@@ -1534,7 +1534,7 @@ class InstallerWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(PROGRAM_NAME)
         self.setFixedSize(*WINDOW_SIZE)
-        self.setWindowIcon(QIcon("icon.ico"))
+        self.setWindowIcon(QIcon(os.path.join(os.getcwd(), "pack", "icon.ico")))
 
         metadata = get_metadata()
         if metadata != []:
