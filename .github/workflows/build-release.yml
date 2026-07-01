@@ -1,13 +1,8 @@
-name: Build for PR and pushes
+name: Build for release
 
 on:
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
-
-permissions:
-  contents: read
+  release:
+    types: [published]
 
 jobs:
   build_windows:
@@ -25,11 +20,11 @@ jobs:
       - name: Build binary (Nuitka)
         run: |
           python -m nuitka --onefile --windows-disable-console --include-module=vdf --windows-icon-from-ico=pack/icon.ico --enable-plugin=pyside6 --assume-yes-for-downloads main.py
-      - name: Upload binary
-        uses: actions/upload-artifact@v4
+      - name: Upload binary and signature to Release
+        uses: softprops/action-gh-release@v2.2.2
         with:
-          name: installer-windows
-          path: ./main.exe
+          files: |
+            ./main.exe
 
   build_linux:
     name: Build for Linux (AppImage)
@@ -69,11 +64,11 @@ jobs:
           wget -nv "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
           chmod +x appimagetool-x86_64.AppImage
           ./appimagetool-x86_64.AppImage AppDir BB+Installer-x86_64.AppImage
-      - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+      - name: Upload binary and signature to Release
+        uses: softprops/action-gh-release@v2.2.2
         with:
-          name: installer-linux
-          path: ./BB+Installer-x86_64.AppImage
+          files: |
+            ./BB+Installer-x86_64.AppImage
 
   build_macos:
     name: Build for macOS (.app)
@@ -105,8 +100,30 @@ jobs:
       - name: Archive .app for upload
         run: |
           ditto -c -k --keepParent main.app BB+Installer-macos.zip
-      - name: Upload .app
-        uses: actions/upload-artifact@v4
+      - name: Upload binary and signature to Release
+        uses: softprops/action-gh-release@v2.2.2
         with:
-          name: installer-macos
-          path: ./BB+Installer-macos.zip
+          files: |
+            ./BB+Installer-macos.zip
+  changelog:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - name: Checkout all
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Install git-cliff
+        uses: taiki-e/install-action@git-cliff
+
+      - name: Generate changelog
+        run: git-cliff >> CHANGELOG.md
+
+      - name: Add changelog to release
+        uses: softprops/action-gh-release@v2.2.2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          body_path: CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
