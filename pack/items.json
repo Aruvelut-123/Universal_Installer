@@ -20,13 +20,13 @@
         "pack/WINBepInEx64.zip"
       ],
       "linuxx86file": [
-        "pack/BepInEx86.zip"
+        "pack/LINUXBepInEx86.zip"
       ],
       "linuxx64file": [
-        "pack/BepInEx64.zip"
+        "pack/LINUXBepInEx64.zip"
       ],
       "macfile": [
-        "pack/BepInEx86.zip"
+        "pack/MACBepInEx86.zip"
       ],
       "actions": {
         "pack/BBPC.zip": "{install_path}",
