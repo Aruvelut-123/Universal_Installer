@@ -6,11 +6,115 @@ import shutil
 import time
 import ctypes
 import zipfile
-from operator import truediv
-
 import rarfile
 import py7zr
 import tarfile
+from datetime import datetime
+import traceback
+
+# ============ REDIRECT STDOUT/STDERR TO FILES ============
+class TeeLogger:
+    """Writes to both original stdout/stderr and log files"""
+    def __init__(self, filename, mode='a', original_stream=None):
+        self.original_stream = original_stream
+        self.filename = filename
+        self.mode = mode
+        self.file = None
+        
+    def write(self, message):
+        if self.file is None:
+            try:
+                # Create logs directory
+                log_dir = "logs"
+                if not os.path.exists(log_dir):
+                    os.makedirs(log_dir)
+                
+                # Create file with timestamp
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                self.filename = os.path.join(log_dir, f"{self.filename}_{timestamp}.log")
+                self.file = open(self.filename, self.mode, encoding='utf-8')
+            except Exception as e:
+                print(f"Failed to create log file: {e}")
+                return
+        
+        # Write to file
+        try:
+            self.file.write(message)
+            self.file.flush()
+        except:
+            pass
+        
+        # Also write to original stream (console)
+        if self.original_stream:
+            try:
+                self.original_stream.write(message)
+                self.original_stream.flush()
+            except:
+                pass
+    
+    def flush(self):
+        try:
+            if self.file:
+                self.file.flush()
+        except:
+            pass
+        if self.original_stream:
+            try:
+                self.original_stream.flush()
+            except:
+                pass
+    
+    def close(self):
+        try:
+            if self.file:
+                self.file.close()
+                self.file = None
+        except:
+            pass
+
+# Save original stdout/stderr
+original_stdout = sys.stdout
+original_stderr = sys.stderr
+
+# Create log files with timestamps
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+# Redirect stdout to output.log
+sys.stdout = TeeLogger(f"output_{timestamp}", 'w', original_stdout)
+
+# Redirect stderr to debug.log
+sys.stderr = TeeLogger(f"debug_{timestamp}", 'w', original_stderr)
+
+# Also capture unhandled exceptions to debug.log
+def global_exception_handler(exc_type, exc_value, exc_traceback):
+    """Write uncaught exceptions to debug.log"""
+    error_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    sys.stderr.write(f"\n{'='*80}\n")
+    sys.stderr.write(f"UNCAUGHT EXCEPTION at {datetime.now()}\n")
+    sys.stderr.write(f"{'='*80}\n")
+    sys.stderr.write(error_msg)
+    sys.stderr.write(f"{'='*80}\n")
+    sys.stderr.flush()
+    
+    # Also print to original stderr
+    if original_stderr:
+        original_stderr.write(error_msg)
+    
+    # Call original handler
+    sys.__excepthook__(exc_type, exc_value, exc_traceback)
+
+sys.excepthook = global_exception_handler
+
+# Log startup information
+print("=" * 80)
+print(f"Application started at {datetime.now()}")
+print(f"Python version: {sys.version}")
+print(f"Platform: {platform.platform()}")
+print(f"Working directory: {os.getcwd()}")
+print(f"Command line: {' '.join(sys.argv)}")
+print(f"Process ID: {os.getpid()}")
+print("=" * 80)
+print()
 
 def get_app_dir():
     """Return the directory where data files live (next to the app, not inside it).
