@@ -13,16 +13,28 @@
         "pack/BBPC.zip",
         "pack/readme.txt"
       ],
-      "x86file": [
+      "winx86file": [
+        "pack/WINBepInEx86.zip"
+      ],
+      "winx64file": [
+        "pack/WINBepInEx64.zip"
+      ],
+      "linuxx86file": [
         "pack/BepInEx86.zip"
       ],
-      "x64file": [
+      "linuxx64file": [
         "pack/BepInEx64.zip"
+      ],
+      "macfile": [
+        "pack/BepInEx86.zip"
       ],
       "actions": {
         "pack/BBPC.zip": "{install_path}",
-        "pack/BepInEx86.zip": "{install_path}",
-        "pack/BepInEx64.zip": "{install_path}",
+        "pack/WINBepInEx86.zip": "{install_path}",
+        "pack/WINBepInEx64.zip": "{install_path}",
+        "pack/LINUXBepInEx86.zip": "{install_path}",
+        "pack/LINUXBepInEx64.zip": "{install_path}",
+        "pack/MACBepInEx.zip": "{install_path}",
         "pack/readme.txt": "{install_path}"
       }
     },

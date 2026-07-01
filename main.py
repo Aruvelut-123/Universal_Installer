@@ -259,45 +259,131 @@ class InstallThread(QThread):
                                             continue
                                     file = file.replace("/", "\\")
                                     self.run_extract(file, file_type, in_path)
-                            if "x64file" in item or "x86file" in item:
-                                if platform.machine() == "AMD64":
-                                    if "x64file" in item:
-                                        for file in item["x64file"]:
-                                            in_path: str = ""
-                                            file_type = ""
-                                            result = file.split(".")
-                                            if file in item["actions"]:
-                                                in_path = item["actions"][file]
-                                                in_path = in_path.replace("{install_path}", self.path)
-                                                in_path = in_path.replace("/", "\\")
-                                            else:
-                                                continue
-                                            temp = file.split("\\")
-                                            file = os.getcwd()
-                                            for path in temp:
-                                                file = os.path.join(file, path)
-                                            temp = in_path.split("\\")
-                                            in_path = ""
-                                            for path in temp:
-                                                in_path = os.path.join(in_path, path)
-                                            if platform.system().lower() != "windows":
-                                                in_path = "/" + in_path
-                                            match result[1]:
-                                                case "zip":
-                                                    file_type = "zip"
-                                                case "rar":
-                                                    file_type = "rar"
-                                                case "7z":
-                                                    file_type = "7z"
-                                                case "tar":
-                                                    file_type = "tar.gz"
-                                                case _:
+                            if "winx86file" in item or "winx64file" in item or "linuxx86file" in item or "linuxx64file" in item or "macfile" in item:
+                                if platform.system().lower() == "windows":
+                                    if platform.machine() == "AMD64":
+                                        if "winx64file" in item:
+                                            for file in item["winx64file"]:
+                                                in_path: str = ""
+                                                file_type = ""
+                                                result = file.split(".")
+                                                if file in item["actions"]:
+                                                    in_path = item["actions"][file]
+                                                    in_path = in_path.replace("{install_path}", self.path)
+                                                    in_path = in_path.replace("/", "\\")
+                                                else:
                                                     continue
-                                            file = file.replace("/", "\\")
-                                            self.run_extract(file, file_type, in_path)
-                                elif platform.machine() == "x86":
-                                    if "x86file" in item:
-                                        for file in item["x86file"]:
+                                                temp = in_path.split("\\")
+                                                in_path = ""
+                                                for path in temp:
+                                                    in_path = os.path.join(in_path, path)
+                                                match result[1]:
+                                                    case "zip":
+                                                        file_type = "zip"
+                                                    case "rar":
+                                                        file_type = "rar"
+                                                    case "7z":
+                                                        file_type = "7z"
+                                                    case "tar":
+                                                        file_type = "tar.gz"
+                                                    case _:
+                                                        continue
+                                                file = file.replace("/", "\\")
+                                                self.run_extract(file, file_type, in_path)
+                                    elif platform.machine() == "x86":
+                                        if "winx86file" in item:
+                                            for file in item["winx86file"]:
+                                                in_path: str = ""
+                                                file_type = ""
+                                                result = file.split(".")
+                                                if file in item["actions"]:
+                                                    in_path = item["actions"][file]
+                                                    in_path = in_path.replace("{install_path}", self.path)
+                                                    in_path = in_path.replace("/", "\\")
+                                                else:
+                                                    continue
+                                                temp = in_path.split("\\")
+                                                in_path = ""
+                                                for path in temp:
+                                                    in_path = os.path.join(in_path, path)
+                                                match result[1]:
+                                                    case "zip":
+                                                        file_type = "zip"
+                                                    case "rar":
+                                                        file_type = "rar"
+                                                    case "7z":
+                                                        file_type = "7z"
+                                                    case "tar":
+                                                        file_type = "tar.gz"
+                                                    case _:
+                                                        continue
+                                                file = file.replace("/", "\\")
+                                                self.run_extract(file, file_type, in_path)
+                                elif platform.system().lower() == "linux":
+                                    if platform.machine() == "AMD64":
+                                        if "linuxx64file" in item:
+                                            for file in item["linuxx64file"]:
+                                                in_path: str = ""
+                                                file_type = ""
+                                                result = file.split(".")
+                                                if file in item["actions"]:
+                                                    in_path = item["actions"][file]
+                                                    in_path = in_path.replace("{install_path}", self.path)
+                                                    in_path = in_path.replace("/", "\\")
+                                                else:
+                                                    continue
+                                                temp = in_path.split("\\")
+                                                in_path = ""
+                                                for path in temp:
+                                                    in_path = os.path.join(in_path, path)
+                                                if platform.system().lower() != "windows":
+                                                    in_path = "/" + in_path
+                                                match result[1]:
+                                                    case "zip":
+                                                        file_type = "zip"
+                                                    case "rar":
+                                                        file_type = "rar"
+                                                    case "7z":
+                                                        file_type = "7z"
+                                                    case "tar":
+                                                        file_type = "tar.gz"
+                                                    case _:
+                                                        continue
+                                                file = file.replace("/", "\\")
+                                                self.run_extract(file, file_type, in_path)
+                                    elif platform.machine() == "x86":
+                                        if "linuxx86file" in item:
+                                            for file in item["linuxx86file"]:
+                                                in_path: str = ""
+                                                file_type = ""
+                                                result = file.split(".")
+                                                if file in item["actions"]:
+                                                    in_path = item["actions"][file]
+                                                    in_path = in_path.replace("{install_path}", self.path)
+                                                    in_path = in_path.replace("/", "\\")
+                                                else:
+                                                    continue
+                                                temp = in_path.split("\\")
+                                                in_path = ""
+                                                for path in temp:
+                                                    in_path = os.path.join(in_path, path)
+                                                in_path = "/" + in_path
+                                                match result[1]:
+                                                    case "zip":
+                                                        file_type = "zip"
+                                                    case "rar":
+                                                        file_type = "rar"
+                                                    case "7z":
+                                                        file_type = "7z"
+                                                    case "tar":
+                                                        file_type = "tar.gz"
+                                                    case _:
+                                                        continue
+                                                file = file.replace("/", "\\")
+                                                self.run_extract(file, file_type, in_path)
+                                elif platform.system().lower() == "drawin":
+                                    if "macfile" in item:
+                                        for file in item["macfile"]:
                                             in_path: str = ""
                                             file_type = ""
                                             result = file.split(".")
@@ -307,16 +393,11 @@ class InstallThread(QThread):
                                                 in_path = in_path.replace("/", "\\")
                                             else:
                                                 continue
-                                            temp = file.split("\\")
-                                            file = os.getcwd()
-                                            for path in temp:
-                                                file = os.path.join(file, path)
                                             temp = in_path.split("\\")
                                             in_path = ""
                                             for path in temp:
                                                 in_path = os.path.join(in_path, path)
-                                            if platform.system().lower() != "windows":
-                                                in_path = "/" + in_path
+                                            in_path = "/" + in_path
                                             match result[1]:
                                                 case "zip":
                                                     file_type = "zip"
