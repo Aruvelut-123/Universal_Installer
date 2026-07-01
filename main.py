@@ -235,12 +235,15 @@ class InstallThread(QThread):
                                         in_path = item["actions"][file]
                                         in_path = in_path.replace("{install_path}", self.path)
                                         in_path = in_path.replace("/", "\\")
+                                        file = file.replace("/", "\\")
                                     else:
                                         continue
                                     temp = file.split("\\")
                                     file = os.getcwd()
                                     for path in temp:
                                         file = os.path.join(file, path)
+                                    if platform.system().lower() != "windows":
+                                        file = "/" + file
                                     temp = in_path.split("\\")
                                     in_path = ""
                                     for path in temp:
