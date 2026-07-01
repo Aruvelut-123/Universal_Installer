@@ -1164,8 +1164,10 @@ class DirectoryPage(BasePage):
                 self.path_input.setText(directory)
 
     def update_directory(self):
-        self.path_input.setText(self.detect_steam_path())
-        self.update_disk_space()
+        path = self.detect_steam_path()
+        if path != None:
+            self.path_input.setText(path)
+            self.update_disk_space()
 
     def detect_steam_path(self):
         if not "game_name" in get_installer_metadata() or len(get_installer_metadata()["game_name"]) <= 0:
