@@ -114,36 +114,9 @@ print(f"Working directory: {os.getcwd()}")
 print(f"Command line: {' '.join(sys.argv)}")
 print(f"Process ID: {os.getpid()}")
 print("=" * 80)
-print()
-
-def get_app_dir():
-    """Return the directory where the application executable is located.
-    Works on Windows, Linux, and macOS.
-    """
-    if getattr(sys, 'frozen', False):
-        # Get the directory containing the executable
-        exe_dir = os.getcwd()
-        
-        # macOS .app bundle special handling
-        if sys.platform == 'darwin':
-            # In a .app bundle, the executable is in:
-            # MyApp.app/Contents/MacOS/executable
-            # We want to return the parent directory (where the .app is)
-            parts = exe_dir.rstrip('/').split('/')
-            if (len(parts) >= 3
-                    and parts[-1] == 'MacOS'
-                    and parts[-2] == 'Contents'
-                    and parts[-3].endswith('.app')):
-                return '/'.join(parts[:-3])
-        
-        return exe_dir
-    
-    # Running as a plain script
-    return os.path.dirname(os.path.abspath(__file__))
-
-print("Found app directory: ", get_app_dir())
+print("Found app directory: ", os.getcwd())
 # Switch CWD immediately so every relative path below this line Just Works
-os.chdir(get_app_dir())
+os.chdir(os.getcwd())
 
 from typing import override, Any
 
