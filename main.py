@@ -315,6 +315,10 @@ class InstallThread(QThread):
         archive_name = os.getcwd()
         for path in temp:
             archive_name = os.path.join(archive_name, path)
+        temp = in_path.split("\\")
+        in_path = ""
+        for path in temp:
+            in_path = os.path.join(in_path, path)
         self.progress_updated.emit(0, "正在解压文件" + archive_name + "...")
         try:
             match archive_type:
