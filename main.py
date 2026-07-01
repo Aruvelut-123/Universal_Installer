@@ -110,6 +110,7 @@ print("=" * 80)
 print(f"Application started at {datetime.now()}")
 print(f"Python version: {sys.version}")
 print(f"Platform: {platform.platform()}")
+print(f"System: {platform.system()}")
 print(f"Working directory: {os.getcwd()}")
 print(f"Command line: {' '.join(sys.argv)}")
 print(f"Process ID: {os.getpid()}")
@@ -320,7 +321,7 @@ class InstallThread(QThread):
                                                 file = file.replace("/", "\\")
                                                 self.run_extract(file, file_type, in_path)
                                 elif platform.system().lower() == "linux":
-                                    if platform.machine() == "AMD64":
+                                    if platform.machine() == "x86_64":
                                         if "linuxx64file" in item:
                                             for file in item["linuxx64file"]:
                                                 in_path: str = ""
@@ -351,7 +352,7 @@ class InstallThread(QThread):
                                                         continue
                                                 file = file.replace("/", "\\")
                                                 self.run_extract(file, file_type, in_path)
-                                    elif platform.machine() == "x86":
+                                    elif platform.machine() == "i386":
                                         if "linuxx86file" in item:
                                             for file in item["linuxx86file"]:
                                                 in_path: str = ""
