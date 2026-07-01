@@ -235,15 +235,8 @@ class InstallThread(QThread):
                                         in_path = item["actions"][file]
                                         in_path = in_path.replace("{install_path}", self.path)
                                         in_path = in_path.replace("/", "\\")
-                                        file = file.replace("/", "\\")
                                     else:
                                         continue
-                                    temp = file.split("\\")
-                                    file = os.getcwd()
-                                    for path in temp:
-                                        file = os.path.join(file, path)
-                                    if platform.system().lower() != "windows":
-                                        file = "/" + file
                                     temp = in_path.split("\\")
                                     in_path = ""
                                     for path in temp:
@@ -347,6 +340,10 @@ class InstallThread(QThread):
             self.finished.emit(self.success)
 
     def run_extract(self, archive_name, archive_type, in_path):
+        temp = archive_name.split("\\")
+        archive_name = os.getcwd()
+        for path in temp:
+            archive_name = os.path.join(archive_name, path)
         self.progress_updated.emit(0, "正在解压文件" + archive_name + "到" + in_path)
         try:
             match archive_type:
