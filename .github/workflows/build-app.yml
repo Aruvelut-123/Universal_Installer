@@ -61,6 +61,7 @@ jobs:
             --enable-plugin=pyside6 \
             --assume-yes-for-downloads \
             --deployment \
+            --include-python-library \
             --output-dir=build \
             main.py
           cp build/main.dist/main.bin main.bin
