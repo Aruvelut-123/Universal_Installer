@@ -147,6 +147,7 @@ def get_app_dir():
     # Running as a plain script: directory containing main.py
     return os.path.dirname(os.path.abspath(__file__))
 
+print("Found app directory: ", get_app_dir())
 # Switch CWD immediately so every relative path below this line Just Works
 os.chdir(get_app_dir())
 
