@@ -117,34 +117,28 @@ print("=" * 80)
 print()
 
 def get_app_dir():
-    """Return the directory where data files live (next to the app, not inside it).
-
-    Handles Nuitka --onefile on all platforms, AppImage, and macOS .app bundle.
+    """Return the directory where the application executable is located.
+    Works on Windows, Linux, and macOS.
     """
     if getattr(sys, 'frozen', False):
-        # AppImage: $APPIMAGE points to the .AppImage file itself
-        env_appimage = os.environ.get('APPIMAGE')
-        if env_appimage:
-            return os.path.dirname(env_appimage)
-
-        # Nuitka --onefile: $NUITKA_ONEFILE_PARENT is the dir containing the binary
-        parent = os.environ.get('NUITKA_ONEFILE_PARENT')
-        if parent:
-            # macOS .app bundle: binary lives in Whatever.app/Contents/MacOS/
-            # but data files sit next to the .app → walk up 3 levels
-            if sys.platform == 'darwin':
-                parts = parent.rstrip('/').split('/')
-                if (len(parts) >= 3
-                        and parts[-1] == 'MacOS'
-                        and parts[-2] == 'Contents'
-                        and parts[-3].endswith('.app')):
-                    return '/'.join(parts[:-3])
-            return parent
-
-        # Generic fallback (should rarely be reached)
-        return os.path.dirname(os.path.abspath(sys.argv[0]))
-
-    # Running as a plain script: directory containing main.py
+        # Get the directory containing the executable
+        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+        
+        # macOS .app bundle special handling
+        if sys.platform == 'darwin':
+            # In a .app bundle, the executable is in:
+            # MyApp.app/Contents/MacOS/executable
+            # We want to return the parent directory (where the .app is)
+            parts = exe_dir.rstrip('/').split('/')
+            if (len(parts) >= 3
+                    and parts[-1] == 'MacOS'
+                    and parts[-2] == 'Contents'
+                    and parts[-3].endswith('.app')):
+                return '/'.join(parts[:-3])
+        
+        return exe_dir
+    
+    # Running as a plain script
     return os.path.dirname(os.path.abspath(__file__))
 
 print("Found app directory: ", get_app_dir())
