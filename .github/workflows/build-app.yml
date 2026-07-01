@@ -63,7 +63,7 @@ jobs:
             --deployment \
             --output-dir=build \
             main.py
-          cp build/main.dist/main main.bin
+          cp build/main.dist/main.bin main.bin
           chmod +x main.bin
       - name: Upload Binary
         uses: actions/upload-artifact@v4
