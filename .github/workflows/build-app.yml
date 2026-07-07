@@ -189,7 +189,7 @@ jobs:
           "
       - name: Build x86_64 (Intel)
         run: |
-        # 创建 x86_64 虚拟环境
+          # 创建 x86_64 虚拟环境
           arch -x86_64 python -m venv venv_x86
           source venv_x86/bin/activate
           arch -x86_64 python -m pip install --upgrade pip
