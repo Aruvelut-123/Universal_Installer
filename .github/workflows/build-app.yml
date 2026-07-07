@@ -19,6 +19,7 @@ on:
       - 'LICENSE'
       - 'pack/**'
       - '.github/workflows/**'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -168,14 +169,14 @@ jobs:
           path: ./main.AppImage
 
   build_macos:
-    name: Build for macOS (.app)
+    name: Build for macOS (Universal)
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -189,20 +190,60 @@ jobs:
           img = img.convert('RGBA')
           img = img.resize((256, 256), Image.Resampling.LANCZOS)
           img.save('pack/icon.icns', format='ICNS')
-          print('icon.icns created')
           "
-      - name: Build .app bundle (Nuitka)
+      - name: Build Universal Binary
         run: |
-          python -m nuitka --macos-create-app-bundle --macos-app-icon=pack/icon.icns --include-module=vdf --enable-plugin=pyside6 --assume-yes-for-downloads main.py
-      - name: Codesign (ad-hoc)
+          # 构建 x86_64
+          python -m nuitka \
+            --macos-create-app-bundle \
+            --macos-app-icon=pack/icon.icns \
+            --include-module=vdf \
+            --enable-plugin=pyside6 \
+            --assume-yes-for-downloads \
+            --architecture=x86_64 \
+            --output-dir=build_x86 \
+            main.py
+          mv main.app main_x86.app
+        
+          # 构建 arm64
+          python -m nuitka \
+            --macos-create-app-bundle \
+            --macos-app-icon=pack/icon.icns \
+            --include-module=vdf \
+            --enable-plugin=pyside6 \
+            --assume-yes-for-downloads \
+            --architecture=arm64 \
+            --output-dir=build_arm \
+            main.py
+          mv main.app main_arm.app
+        
+          # 创建通用应用
+          cp -r build_arm/main.app main.app
+          lipo -create \
+            build_x86/main_x86.app/Contents/MacOS/main \
+            build_arm/main_arm.app/Contents/MacOS/main \
+            -output main.app/Contents/MacOS/main
+        
+          # 验证
+          echo "=== Universal Binary Info ==="
+          file main.app/Contents/MacOS/main
+          lipo -info main.app/Contents/MacOS/main
+        
+          # 检查架构
+          if lipo -info main.app/Contents/MacOS/main | grep -q "x86_64"; then
+            echo "✅ Contains x86_64 (Intel)"
+          fi
+          if lipo -info main.app/Contents/MacOS/main | grep -q "arm64"; then
+            echo "✅ Contains arm64 (Apple Silicon)"
+          fi
+      - name: Codesign
         run: |
           codesign --force --deep --sign - main.app
-          echo "Ad-hoc signing done. Users will need to right-click → Open the first time."
-      - name: Archive .app for upload
+      - name: Create zip
         run: |
           ditto -c -k --keepParent main.app macos.zip
-      - name: Upload .app
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: installer-macos
+          name: installer-macos-universal
           path: ./macos.zip
