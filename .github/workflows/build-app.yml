@@ -176,10 +176,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
       - name: Convert icon to .icns
         run: |
           python3 -c "
@@ -191,9 +187,15 @@ jobs:
           img = img.resize((256, 256), Image.Resampling.LANCZOS)
           img.save('pack/icon.icns', format='ICNS')
           "
-      - name: Build Universal Binary
+      - name: Build x86_64 (Intel)
         run: |
-          # 构建 x86_64
+        # 创建 x86_64 虚拟环境
+          arch -x86_64 python -m venv venv_x86
+          source venv_x86/bin/activate
+          arch -x86_64 python -m pip install --upgrade pip
+          arch -x86_64 python -m pip install -r requirements.txt
+        
+          # 构建
           arch -x86_64 python -m nuitka \
             --macos-create-app-bundle \
             --macos-app-icon=pack/icon.icns \
@@ -204,7 +206,17 @@ jobs:
             main.py
           mv main.app main_x86.app
         
-          # 构建 arm64
+          deactivate
+    
+      - name: Build arm64 (Apple Silicon)
+        run: |
+          # 创建 arm64 虚拟环境
+          arch -arm64 python -m venv venv_arm
+          source venv_arm/bin/activate
+          arch -arm64 python -m pip install --upgrade pip
+          arch -arm64 python -m pip install -r requirements.txt
+        
+          # 构建
           arch -arm64 python -m nuitka \
             --macos-create-app-bundle \
             --macos-app-icon=pack/icon.icns \
@@ -214,8 +226,11 @@ jobs:
             --output-dir=build_arm \
             main.py
           mv main.app main_arm.app
-        
-          # 创建通用应用
+          
+          deactivate
+    
+      - name: Create Universal Binary
+        run: |
           cp -r build_arm/main.app main.app
           lipo -create \
             build_x86/main_x86.app/Contents/MacOS/main \
