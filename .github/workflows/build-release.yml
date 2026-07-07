@@ -165,24 +165,28 @@ jobs:
           python3 -c "
           from PIL import Image
           img = Image.open('pack/icon.ico')
+          if hasattr(img, 'n_frames') and img.n_frames > 1:
+              img.seek(0)
+          img = img.convert('RGBA')
+          img = img.resize((256, 256), Image.Resampling.LANCZOS)
           img.save('pack/icon.icns', format='ICNS')
           print('icon.icns created')
           "
       - name: Build .app bundle (Nuitka)
         run: |
-          python -m nuitka --onefile --macos-create-app-bundle --macos-app-icon=pack/icon.icns --include-module=vdf --enable-plugin=pyside6 --assume-yes-for-downloads main.py
+          python -m nuitka --macos-create-app-bundle --macos-app-icon=pack/icon.icns --include-module=vdf --enable-plugin=pyside6 --assume-yes-for-downloads main.py
       - name: Codesign (ad-hoc)
         run: |
           codesign --force --deep --sign - main.app
           echo "Ad-hoc signing done. Users will need to right-click → Open the first time."
       - name: Archive .app for upload
         run: |
-          ditto -c -k --keepParent main.app BB+Installer-macos.zip
+          ditto -c -k --keepParent main.app macos.zip
       - name: Upload binary and signature to Release
         uses: softprops/action-gh-release@v2.2.2
         with:
           files: |
-            ./BB+Installer-macos.zip
+            ./macos.zip
   changelog:
     runs-on: ubuntu-latest
     continue-on-error: true
