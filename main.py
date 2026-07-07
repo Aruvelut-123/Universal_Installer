@@ -107,7 +107,7 @@ sys.excepthook = global_exception_handler
 
 # Log startup information
 if platform.system().lower() == "darwin":
-    os.chdir(os.path.dirname(os.path.absent(__file__)))
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
 print("=" * 80)
 print(f"Application started at {datetime.now()}")
 print(f"Python version: {sys.version}")
