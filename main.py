@@ -106,6 +106,8 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
 sys.excepthook = global_exception_handler
 
 # Log startup information
+if platform.system().lower() == "darwin":
+    os.chdir(os.path.dirname(os.path.absent(__file__)))
 print("=" * 80)
 print(f"Application started at {datetime.now()}")
 print(f"Python version: {sys.version}")
@@ -115,9 +117,13 @@ print(f"Working directory: {os.getcwd()}")
 print(f"Command line: {' '.join(sys.argv)}")
 print(f"Process ID: {os.getpid()}")
 print("=" * 80)
-print("Found app directory: ", os.getcwd())
 # Switch CWD immediately so every relative path below this line Just Works
-os.chdir(os.getcwd())
+if ".app" in os.getcwd():
+    print("Found .app folder, going up three folders")
+    os.chdir("../../..")
+else:
+    os.chdir(os.getcwd())
+print("Found app directory: ", os.getcwd())
 
 from typing import override, Any
 
@@ -1164,7 +1170,7 @@ class DirectoryPage(BasePage):
                 self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path_linux"]
             else:
                 self.default_path = ""
-        elif platform.system().lower() == "drawin":
+        elif platform.system().lower() == "darwin":
             if "default_path_macos" in get_metadata()["items"][MAIN_ITEM]:
                 self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path_macos"]
             else:
@@ -1336,7 +1342,7 @@ class DirectoryPage(BasePage):
                         return path
             print("Steam文件夹不存在!")
             return None
-        elif platform.system().lower() == "drawin":
+        elif platform.system().lower() == "darwin":
             possible_paths = [
                 os.path.expanduser("~/Library/Application Support/Steam"),
                 "/Applications/Steam.app"
@@ -1392,7 +1398,7 @@ class DirectoryPage(BasePage):
                     drive = os.path.splitdrive(path)[0]
                 elif platform.system().lower() == "linux":
                     drive = self._get_mount_point(path)
-                elif platform.system().lower() == "drawin":
+                elif platform.system().lower() == "darwin":
                     drive = self._get_mount_point(path)
                 else:
                     return
