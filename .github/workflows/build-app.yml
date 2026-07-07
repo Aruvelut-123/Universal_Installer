@@ -178,6 +178,7 @@ jobs:
           python-version: "3.13"
       - name: Convert icon to .icns
         run: |
+          python3 -m pip install pillow
           python3 -c "
           from PIL import Image
           img = Image.open('pack/icon.ico')
