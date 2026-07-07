@@ -218,9 +218,6 @@ jobs:
             --standalone \
             --macos-app-icon=pack/icon.icns \
             --include-module=vdf \
-            --include-package=PySide6 \
-            --include-package=shiboken6 \
-            --include-package=PIL \
             --enable-plugin=pyside6 \
             --assume-yes-for-downloads \
             main.py
@@ -244,11 +241,6 @@ jobs:
       
       - name: Codesign (ad-hoc)
         run: |
-          # 先签名所有库文件
-          find main.app -name "*.so" -type f -exec codesign --force --sign - {} \;
-          find main.app -name "*.dylib" -type f -exec codesign --force --sign - {} \;
-          find main.app -name "*.framework" -type d -exec codesign --force --sign - {} \;
-          
           # 签名整个应用
           codesign --force --deep --sign - main.app
           
