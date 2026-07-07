@@ -170,22 +170,28 @@ jobs:
           path: ./main.AppImage
 
   build_macos:
-    name: Build for macOS (Intel x86_64)
-    runs-on: macos-13  # 使用 Intel 运行器
+    name: Build for macOS (x86_64 - runs on both Intel & Apple Silicon)
+    runs-on: macos-latest  # Apple Silicon 运行器，启动更快
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
       
-      - name: Install dependencies
+      - name: Install dependencies (x86_64)
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pillow
+          # 强制使用 x86_64 架构安装所有依赖
+          arch -x86_64 python -m venv venv_x86
+          source venv_x86/bin/activate
+          arch -x86_64 python -m pip install --upgrade pip
+          arch -x86_64 python -m pip install -r requirements.txt
+          arch -x86_64 python -m pip install pillow
+          deactivate
       
       - name: Convert icon to .icns
         run: |
+          # 使用系统 Python 安装 pillow 并转换图标
+          python3 -m pip install pillow
           python3 -c "
           from PIL import Image
           import os
@@ -206,28 +212,35 @@ jobs:
       
       - name: Build .app bundle (x86_64)
         run: |
-          python -m nuitka \
+          source venv_x86/bin/activate
+          arch -x86_64 python -m nuitka \
             --macos-create-app-bundle \
             --standalone \
             --macos-app-icon=pack/icon.icns \
             --include-module=vdf \
             --include-package=PySide6 \
+            --include-package=shiboken6 \
             --include-package=PIL \
             --enable-plugin=pyside6 \
             --assume-yes-for-downloads \
             main.py
+          deactivate
       
-      - name: Verify architecture
+      - name: Verify architecture (should be x86_64)
         run: |
           echo "=== Binary Architecture ==="
           file main.app/Contents/MacOS/main
           lipo -info main.app/Contents/MacOS/main
           
-          echo -e "\n=== Checking libraries ==="
-          find main.app -name "*.so" -type f | head -5 | while read so; do
-            echo "Checking: $(basename $so)"
-            lipo -info "$so" 2>/dev/null || file "$so"
-          done
+          # 验证是否为 x86_64
+          if lipo -info main.app/Contents/MacOS/main | grep -q "x86_64"; then
+            echo "✅ Built for Intel x86_64"
+            echo "✅ Will run natively on Intel Mac"
+            echo "✅ Will run via Rosetta 2 on Apple Silicon Mac"
+          else
+            echo "❌ Not built for x86_64"
+            exit 1
+          fi
       
       - name: Codesign (ad-hoc)
         run: |
@@ -249,5 +262,5 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: installer-macos-intel
+          name: installer-macos-universal-compatible
           path: ./macos.zip
