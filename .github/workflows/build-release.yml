@@ -174,25 +174,23 @@ jobs:
       - name: Build Universal Binary
         run: |
           # 构建 x86_64
-          python -m nuitka \
+          arch -x86_64 python -m nuitka \
             --macos-create-app-bundle \
             --macos-app-icon=pack/icon.icns \
             --include-module=vdf \
             --enable-plugin=pyside6 \
             --assume-yes-for-downloads \
-            --architecture=x86_64 \
             --output-dir=build_x86 \
             main.py
           mv main.app main_x86.app
         
           # 构建 arm64
-          python -m nuitka \
+          arch -arm64 python -m nuitka \
             --macos-create-app-bundle \
             --macos-app-icon=pack/icon.icns \
             --include-module=vdf \
             --enable-plugin=pyside6 \
             --assume-yes-for-downloads \
-            --architecture=arm64 \
             --output-dir=build_arm \
             main.py
           mv main.app main_arm.app
