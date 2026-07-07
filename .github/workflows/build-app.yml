@@ -68,6 +68,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pillow
       - name: Build with Nuitka (onefile)
         run: |
           python -m nuitka \
@@ -117,7 +118,7 @@ jobs:
             find /usr/lib -name "$lib" 2>/dev/null | head -1 | xargs -r cp -t AppDir/usr/lib/ || true
           done
           
-          # 创建 AppRun（简单版，因为 main 已经自包含 Python）
+          # 创建 AppRun
           cat > AppDir/AppRun << 'APPRUNEOF'
           #!/bin/bash
           SELF=$(readlink -f "$0")
@@ -169,95 +170,84 @@ jobs:
           path: ./main.AppImage
 
   build_macos:
-    name: Build for macOS (Universal)
-    runs-on: macos-latest
+    name: Build for macOS (Intel x86_64)
+    runs-on: macos-13  # 使用 Intel 运行器
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pillow
+      
       - name: Convert icon to .icns
         run: |
-          python3 -m pip install pillow
           python3 -c "
           from PIL import Image
-          img = Image.open('pack/icon.ico')
+          import os
+          
+          icon_path = 'pack/icon.ico'
+          if not os.path.exists(icon_path):
+              print(f'Warning: {icon_path} not found')
+              exit(0)
+          
+          img = Image.open(icon_path)
           if hasattr(img, 'n_frames') and img.n_frames > 1:
               img.seek(0)
           img = img.convert('RGBA')
           img = img.resize((256, 256), Image.Resampling.LANCZOS)
           img.save('pack/icon.icns', format='ICNS')
+          print('✅ icon.icns created successfully')
           "
-      - name: Build x86_64 (Intel)
+      
+      - name: Build .app bundle (x86_64)
         run: |
-          # 创建 x86_64 虚拟环境
-          arch -x86_64 python -m venv venv_x86
-          source venv_x86/bin/activate
-          arch -x86_64 python -m pip install --upgrade pip
-          arch -x86_64 python -m pip install -r requirements.txt
-        
-          # 构建
-          arch -x86_64 python -m nuitka \
+          python -m nuitka \
             --macos-create-app-bundle \
+            --standalone \
             --macos-app-icon=pack/icon.icns \
             --include-module=vdf \
+            --include-package=PySide6 \
+            --include-package=PIL \
             --enable-plugin=pyside6 \
             --assume-yes-for-downloads \
-            --output-dir=build_x86 \
             main.py
-          mv main.app main_x86.app
-        
-          deactivate
-    
-      - name: Build arm64 (Apple Silicon)
+      
+      - name: Verify architecture
         run: |
-          # 创建 arm64 虚拟环境
-          arch -arm64 python -m venv venv_arm
-          source venv_arm/bin/activate
-          arch -arm64 python -m pip install --upgrade pip
-          arch -arm64 python -m pip install -r requirements.txt
-        
-          # 构建
-          arch -arm64 python -m nuitka \
-            --macos-create-app-bundle \
-            --macos-app-icon=pack/icon.icns \
-            --include-module=vdf \
-            --enable-plugin=pyside6 \
-            --assume-yes-for-downloads \
-            --output-dir=build_arm \
-            main.py
-          mv main.app main_arm.app
-          
-          deactivate
-    
-      - name: Create Universal Binary
-        run: |
-          cp -r build_arm/main.app main.app
-          lipo -create \
-            build_x86/main_x86.app/Contents/MacOS/main \
-            build_arm/main_arm.app/Contents/MacOS/main \
-            -output main.app/Contents/MacOS/main
-        
-          # 验证
-          echo "=== Universal Binary Info ==="
+          echo "=== Binary Architecture ==="
           file main.app/Contents/MacOS/main
           lipo -info main.app/Contents/MacOS/main
-        
-          # 检查架构
-          if lipo -info main.app/Contents/MacOS/main | grep -q "x86_64"; then
-            echo "✅ Contains x86_64 (Intel)"
-          fi
-          if lipo -info main.app/Contents/MacOS/main | grep -q "arm64"; then
-            echo "✅ Contains arm64 (Apple Silicon)"
-          fi
-      - name: Codesign
+          
+          echo -e "\n=== Checking libraries ==="
+          find main.app -name "*.so" -type f | head -5 | while read so; do
+            echo "Checking: $(basename $so)"
+            lipo -info "$so" 2>/dev/null || file "$so"
+          done
+      
+      - name: Codesign (ad-hoc)
         run: |
+          # 先签名所有库文件
+          find main.app -name "*.so" -type f -exec codesign --force --sign - {} \;
+          find main.app -name "*.dylib" -type f -exec codesign --force --sign - {} \;
+          find main.app -name "*.framework" -type d -exec codesign --force --sign - {} \;
+          
+          # 签名整个应用
           codesign --force --deep --sign - main.app
+          
+          # 验证签名
+          codesign --verify --deep --strict main.app || echo "⚠️  Ad-hoc signing warning (expected)"
+      
       - name: Create zip
         run: |
           ditto -c -k --keepParent main.app macos.zip
+      
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: installer-macos-universal
+          name: installer-macos-intel
           path: ./macos.zip
