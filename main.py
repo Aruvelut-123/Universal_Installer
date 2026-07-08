@@ -1255,6 +1255,9 @@ class DirectoryPage(BasePage):
         if not "game_name" in get_installer_metadata() or len(get_installer_metadata()["game_name"]) <= 0:
             print("game name not contains in installer metadata, returning default path")
             return self.default_path
+        if self.get_steam_path() == None:
+            print("steam not installed, return default path")
+            return self.default_path
         library_folders = os.path.join(self.get_steam_path(), "steamapps", "libraryfolders.vdf")
         print("library folders file path: "+library_folders)
         if os.path.exists(library_folders):
