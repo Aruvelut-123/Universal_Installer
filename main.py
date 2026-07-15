@@ -263,13 +263,14 @@ class InstallThread(QThread):
         in_path = in_path.replace("/", "\\")
         print(f"[DEBUG] 替换后的路径: {in_path}")
         
-        # 使用os.path.join规范化路径
-        temp = in_path.split("\\")
-        in_path = os.path.join(*temp)  # 更简洁的方式
-        print(f"[DEBUG] os.path.join后的路径: {in_path}")
-        
-        # 非Windows系统添加前缀
+        # 非Windows系统
         if platform.system().lower() != "windows":
+            # 使用os.path.join规范化路径
+            temp = in_path.split("\\")
+            in_path = os.path.join(*temp)  # 更简洁的方式
+            print(f"[DEBUG] os.path.join后的路径: {in_path}")
+        
+            # 添加前缀
             in_path = "/" + in_path
             print(f"[DEBUG] 非Windows系统，添加前缀: {in_path}")
         
