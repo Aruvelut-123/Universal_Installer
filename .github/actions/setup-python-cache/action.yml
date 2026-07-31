@@ -5,6 +5,10 @@ inputs:
   python-version:
     description: Python version passed to actions/setup-python.
     required: true
+  architecture:
+    description: Python interpreter architecture.
+    required: false
+    default: x64
 
 outputs:
   cache-dir:
@@ -24,6 +28,7 @@ runs:
       uses: actions/setup-python@v6
       with:
         python-version: ${{ inputs.python-version }}
+        architecture: ${{ inputs.architecture }}
 
     - name: Locate pip cache
       id: pip-cache
@@ -37,7 +42,7 @@ runs:
       id: cache-key
       shell: bash
       env:
-        CACHE_KEY: pip-${{ runner.os }}-${{ runner.arch }}-py${{ inputs.python-version }}-${{ hashFiles('requirements.txt') }}
+        CACHE_KEY: pip-${{ runner.os }}-${{ inputs.architecture }}-py${{ inputs.python-version }}-${{ hashFiles('requirements.txt') }}
       run: echo "value=$CACHE_KEY" >> "$GITHUB_OUTPUT"
 
     - name: Restore pip cache
@@ -47,4 +52,4 @@ runs:
         path: ${{ steps.pip-cache.outputs.dir }}
         key: ${{ steps.cache-key.outputs.value }}
         restore-keys: |
-          pip-${{ runner.os }}-${{ runner.arch }}-py${{ inputs.python-version }}-
+          pip-${{ runner.os }}-${{ inputs.architecture }}-py${{ inputs.python-version }}-
