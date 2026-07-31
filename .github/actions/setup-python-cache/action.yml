@@ -1,0 +1,31 @@
+name: Set up Python with pip cache
+description: Configure Python and persist the concrete pip download cache directory.
+
+inputs:
+  python-version:
+    description: Python version passed to actions/setup-python.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Locate pip cache
+      id: pip-cache
+      shell: bash
+      run: |
+        cache_dir="$(python -m pip cache dir)"
+        mkdir -p "$cache_dir"
+        echo "dir=$cache_dir" >> "$GITHUB_OUTPUT"
+
+    - name: Restore pip cache
+      uses: actions/cache@v6
+      with:
+        path: ${{ steps.pip-cache.outputs.dir }}
+        key: pip-${{ runner.os }}-${{ runner.arch }}-py${{ inputs.python-version }}-${{ hashFiles('requirements.txt') }}
+        restore-keys: |
+          pip-${{ runner.os }}-${{ runner.arch }}-py${{ inputs.python-version }}-

@@ -37,11 +37,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: ./.github/actions/setup-python-cache
         with:
           python-version: "3.13"
-          cache: pip
-          cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
       - name: Build binary (Nuitka)
@@ -58,11 +56,9 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: ./.github/actions/setup-python-cache
         with:
           python-version: "3.13"
-          cache: pip
-          cache-dependency-path: requirements.txt
       - name: Install system dependencies
         run: |
           sudo apt-get update -qq
@@ -177,11 +173,9 @@ jobs:
     runs-on: macos-latest  # Apple Silicon 运行器，启动更快
     steps:
       - uses: actions/checkout@v6
-      - uses: actions/setup-python@v6
+      - uses: ./.github/actions/setup-python-cache
         with:
           python-version: "3.13"
-          cache: pip
-          cache-dependency-path: requirements.txt
       
       - name: Install dependencies (x86_64)
         run: |
