@@ -135,8 +135,10 @@ from PySide6.QtWidgets import (
     QProgressBar, QGroupBox, QFrame, QMessageBox, QTreeWidget,
     QTreeWidgetItem
 )
-from PySide6.QtGui import QPixmap, QIcon, QFont
-from PySide6.QtCore import Qt, QThread, Signal, QSize
+from PySide6.QtGui import (
+    QAction, QActionGroup, QColor, QFont, QIcon, QPalette, QPixmap
+)
+from PySide6.QtCore import QSettings, QSize, Qt, QThread, Signal
 metadata : dict = {}
 installer_metadata : dict = {}
 
@@ -198,6 +200,189 @@ UNINSTALL_REG_KEY : str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninsta
 WINDOW_SIZE = (640, 480)  # 固定窗口大小
 METADATA_PATH : str = get_installer_metadata()["item_metadata"]
 MAIN_ITEM : int = get_installer_metadata()["main_item"]
+
+THEME_MODES = {
+    "system": "跟随系统",
+    "light": "浅色",
+    "dark": "深色",
+}
+
+THEME_COLORS = {
+    "light": {
+        "window": "#F5F5F5",
+        "base": "#FFFFFF",
+        "alternate": "#F0F0F0",
+        "text": "#202020",
+        "muted": "#666666",
+        "border": "#C8C8C8",
+        "button": "#F1F1F1",
+        "button_hover": "#E5E5E5",
+        "button_pressed": "#D9D9D9",
+        "disabled": "#A0A0A0",
+        "highlight": "#4BA348",
+        "highlight_hover": "#3D8C39",
+        "highlight_pressed": "#2D6C29",
+        "highlight_text": "#FFFFFF",
+        "log_background": "#FAFAFA",
+    },
+    "dark": {
+        "window": "#202124",
+        "base": "#292A2D",
+        "alternate": "#303134",
+        "text": "#F1F3F4",
+        "muted": "#B0B3B8",
+        "border": "#5F6368",
+        "button": "#35363A",
+        "button_hover": "#45464B",
+        "button_pressed": "#2A2B2E",
+        "disabled": "#80868B",
+        "highlight": "#57B957",
+        "highlight_hover": "#66C766",
+        "highlight_pressed": "#3F9340",
+        "highlight_text": "#FFFFFF",
+        "log_background": "#17181A",
+    },
+}
+
+
+def get_system_theme() -> str:
+    """Return the OS application theme, with a Windows registry fallback."""
+    app = QApplication.instance()
+    if app is not None:
+        scheme = app.styleHints().colorScheme()
+        if scheme == Qt.ColorScheme.Dark:
+            return "dark"
+        if scheme == Qt.ColorScheme.Light:
+            return "light"
+
+    if platform.system().lower() == "windows":
+        try:
+            import winreg
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path) as key:
+                value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+                return "light" if value else "dark"
+        except (ImportError, OSError):
+            pass
+    return "light"
+
+
+def create_theme_palette(theme: str) -> QPalette:
+    """Build a complete Qt palette for the requested theme."""
+    colors = THEME_COLORS[theme]
+    palette = QPalette()
+    roles = {
+        QPalette.ColorRole.Window: "window",
+        QPalette.ColorRole.WindowText: "text",
+        QPalette.ColorRole.Base: "base",
+        QPalette.ColorRole.AlternateBase: "alternate",
+        QPalette.ColorRole.ToolTipBase: "base",
+        QPalette.ColorRole.ToolTipText: "text",
+        QPalette.ColorRole.Text: "text",
+        QPalette.ColorRole.Button: "button",
+        QPalette.ColorRole.ButtonText: "text",
+        QPalette.ColorRole.BrightText: "highlight_text",
+        QPalette.ColorRole.Link: "highlight",
+        QPalette.ColorRole.Highlight: "highlight",
+        QPalette.ColorRole.HighlightedText: "highlight_text",
+        QPalette.ColorRole.PlaceholderText: "muted",
+    }
+    for role, color_name in roles.items():
+        palette.setColor(role, QColor(colors[color_name]))
+    palette.setColor(
+        QPalette.ColorGroup.Disabled,
+        QPalette.ColorRole.Text,
+        QColor(colors["disabled"]),
+    )
+    palette.setColor(
+        QPalette.ColorGroup.Disabled,
+        QPalette.ColorRole.ButtonText,
+        QColor(colors["disabled"]),
+    )
+    return palette
+
+
+def create_theme_stylesheet(theme: str) -> str:
+    """Return palette-aware QSS without hard-coded light-only widget styles."""
+    color = THEME_COLORS[theme]
+    return f"""
+        QMainWindow, QWidget {{
+            background-color: {color['window']};
+            color: {color['text']};
+        }}
+        QGroupBox {{
+            border: 1px solid {color['border']};
+            border-radius: 4px;
+            margin-top: 8px;
+            padding-top: 8px;
+        }}
+        QGroupBox::title {{
+            subcontrol-origin: margin;
+            left: 8px;
+            padding: 0 4px;
+        }}
+        QLineEdit, QTextEdit, QTreeWidget {{
+            background-color: {color['base']};
+            color: {color['text']};
+            border: 1px solid {color['border']};
+            border-radius: 3px;
+            selection-background-color: {color['highlight']};
+            selection-color: {color['highlight_text']};
+        }}
+        QPushButton {{
+            background-color: {color['button']};
+            color: {color['text']};
+            border: 1px solid {color['border']};
+            border-radius: 3px;
+            padding: 5px 15px;
+        }}
+        QPushButton:hover {{ background-color: {color['button_hover']}; }}
+        QPushButton:pressed {{ background-color: {color['button_pressed']}; }}
+        QPushButton:disabled {{ color: {color['disabled']}; }}
+        QPushButton[buttonStyle="primary"] {{
+            background-color: {color['highlight']};
+            color: {color['highlight_text']};
+            border-color: {color['highlight_pressed']};
+        }}
+        QPushButton[buttonStyle="primary"]:hover {{
+            background-color: {color['highlight_hover']};
+        }}
+        QPushButton[buttonStyle="primary"]:pressed {{
+            background-color: {color['highlight_pressed']};
+        }}
+        QProgressBar {{
+            background-color: {color['base']};
+            color: {color['text']};
+            border: 1px solid {color['border']};
+            border-radius: 5px;
+            text-align: center;
+        }}
+        QProgressBar::chunk {{ background-color: {color['highlight']}; }}
+        QTextEdit[logView="true"] {{
+            background-color: {color['log_background']};
+            color: {color['text']};
+        }}
+        QLabel[muted="true"] {{ color: {color['muted']}; }}
+        QMenuBar, QMenu {{
+            background-color: {color['window']};
+            color: {color['text']};
+        }}
+        QMenuBar::item:selected, QMenu::item:selected {{
+            background-color: {color['highlight']};
+            color: {color['highlight_text']};
+        }}
+    """
+
+
+def apply_application_theme(theme: str) -> None:
+    """Apply a theme to the active application and all existing widgets."""
+    if theme not in THEME_COLORS:
+        raise ValueError(f"未知主题: {theme}")
+    app = QApplication.instance()
+    if app is None:
+        raise RuntimeError("QApplication 尚未创建")
+    app.setPalette(create_theme_palette(theme))
+    app.setStyleSheet(create_theme_stylesheet(theme))
 
 # 检查管理员权限的函数
 def is_admin():
@@ -601,7 +786,7 @@ class BasePage(QWidget):
         self.footer_label = QLabel(get_installer_metadata()["footer_info"])
         footer_font = QFont("Microsoft YaHei UI", 8)
         self.footer_label.setFont(footer_font)
-        self.footer_label.setStyleSheet("color: #666666;")
+        self.footer_label.setProperty("muted", True)
         self.footer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # 添加到布局
@@ -629,37 +814,7 @@ class BasePage(QWidget):
         button.setMinimumSize(100, 30)
 
         if style == "primary":
-            button.setStyleSheet(
-                "QPushButton {"
-                "   background-color: #4BA348;"
-                "   color: white;"
-                "   border: 1px solid #3D8C39;"
-                "   border-radius: 3px;"
-                "   padding: 5px 15px;"
-                "}"
-                "QPushButton:hover {"
-                "   background-color: #3D8C39;"
-                "}"
-                "QPushButton:pressed {"
-                "   background-color: #2D6C29;"
-                "}"
-            )
-        else:
-            button.setStyleSheet(
-                "QPushButton {"
-                "   background-color: #F1F1F1;"
-                "   color: #333333;"
-                "   border: 1px solid #CCCCCC;"
-                "   border-radius: 3px;"
-                "   padding: 5px 15px;"
-                "}"
-                "QPushButton:hover {"
-                "   background-color: #E5E5E5;"
-                "}"
-                "QPushButton:pressed {"
-                "   background-color: #D9D9D9;"
-                "}"
-            )
+            button.setProperty("buttonStyle", "primary")
 
         button.clicked.connect(callback)
         self.button_layout.addWidget(button)
@@ -723,7 +878,8 @@ class LicensePage(BasePage):
 
         # 添加提示文本
         tip_label = QLabel("要阅读协议的其余部分，请使用滚动条浏览。")
-        tip_label.setStyleSheet("font-size: 9pt; color: #666666;")
+        tip_label.setStyleSheet("font-size: 9pt;")
+        tip_label.setProperty("muted", True)
 
         # 添加协议接受选项
         self.agree_checkbox = QCheckBox("我接受许可证的条款")
@@ -1431,7 +1587,7 @@ class DirectoryPage(BasePage):
                 )
             except:
                 self.available_label.setText("可用空间: 未知")
-                self.available_label.setStyleSheet("color: #666666; font-size: 9pt;")
+                self.available_label.setStyleSheet("color: palette(mid); font-size: 9pt;")
 
     def on_install(self):
         path = self.path_input.text()
@@ -1478,18 +1634,6 @@ class InstallPage(QWidget):
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setTextVisible(True)
-        self.progress_bar.setStyleSheet("""
-            QProgressBar {
-                border: 1px solid #CCCCCC;
-                border-radius: 5px;
-                text-align: center;
-                background: black;
-            }
-            QProgressBar::chunk {
-                background-color: #4BA348;
-                width: 10px;
-            }
-        """)
         main_layout.addWidget(self.progress_bar)
 
         # 安装日志区域
@@ -1499,7 +1643,7 @@ class InstallPage(QWidget):
         self.log_area = QTextEdit()
         self.log_area.setReadOnly(True)
         self.log_area.setFont(QFont("Consolas", 9))
-        self.log_area.setStyleSheet("background-color: #000000; color: #CCCCCC;")
+        self.log_area.setProperty("logView", True)
 
         logs_layout.addWidget(self.log_area)
         main_layout.addWidget(logs_group)
@@ -1511,15 +1655,6 @@ class InstallPage(QWidget):
         # 显示详情按钮
         self.details_button = QPushButton("隐藏详情(D)")
         self.details_button.setFont(QFont("Microsoft YaHei UI", 9))
-        self.details_button.setStyleSheet("""
-            QPushButton {
-                background-color: #F1F1F1;
-                color: #333333;
-                border: 1px solid #CCCCCC;
-                border-radius: 3px;
-                padding: 5px 15px;
-            }
-        """)
         self.details_button.clicked.connect(self.toggle_details)
         self.button_layout.addWidget(self.details_button)
 
@@ -1532,7 +1667,7 @@ class InstallPage(QWidget):
         # 底部信息
         footer_label = QLabel(get_installer_metadata()["footer_info"])
         footer_label.setFont(QFont("Microsoft YaHei UI", 8))
-        footer_label.setStyleSheet("color: #666666;")
+        footer_label.setProperty("muted", True)
         footer_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(footer_label)
 
@@ -1546,37 +1681,7 @@ class InstallPage(QWidget):
         button.setMinimumSize(100, 30)
 
         if style == "primary":
-            button.setStyleSheet(
-                "QPushButton {"
-                "   background-color: #4BA348;"
-                "   color: white;"
-                "   border: 1px solid #3D8C39;"
-                "   border-radius: 3px;"
-                "   padding: 5px 15px;"
-                "}"
-                "QPushButton:hover {"
-                "   background-color: #3D8C39;"
-                "}"
-                "QPushButton:pressed {"
-                "   background-color: #2D6C29;"
-                "}"
-            )
-        else:
-            button.setStyleSheet(
-                "QPushButton {"
-                "   background-color: #F1F1F1;"
-                "   color: #333333;"
-                "   border: 1px solid #CCCCCC;"
-                "   border-radius: 3px;"
-                "   padding: 5px 15px;"
-                "}"
-                "QPushButton:hover {"
-                "   background-color: #E5E5E5;"
-                "}"
-                "QPushButton:pressed {"
-                "   background-color: #D9D9D9;"
-                "}"
-            )
+            button.setProperty("buttonStyle", "primary")
 
         button.clicked.connect(callback)
         self.button_layout.addWidget(button)
@@ -1668,6 +1773,16 @@ class InstallerWindow(QMainWindow):
         self.setFixedSize(*WINDOW_SIZE)
         self.setWindowIcon(QIcon(os.path.join(os.getcwd(), "pack", "icon.ico")))
 
+        self.theme_settings = QSettings("Baymaxawa", "UniversalInstaller")
+        saved_theme = self.theme_settings.value("appearance/theme", "system")
+        self.theme_mode = saved_theme if saved_theme in THEME_MODES else "system"
+        self.setup_theme_menu()
+        self.apply_theme_mode()
+
+        style_hints = QApplication.styleHints()
+        if hasattr(style_hints, "colorSchemeChanged"):
+            style_hints.colorSchemeChanged.connect(self.on_system_theme_changed)
+
         metadata = get_metadata()
         if metadata != []:
             self.default_path = metadata["items"][0]["default_path"]
@@ -1717,6 +1832,42 @@ class InstallerWindow(QMainWindow):
         # 设置当前页面
         self.go_to_page("welcome")
 
+    def setup_theme_menu(self):
+        """Create an exclusive System/Light/Dark appearance menu."""
+        theme_menu = self.menuBar().addMenu("外观(&V)")
+        self.theme_action_group = QActionGroup(self)
+        self.theme_action_group.setExclusive(True)
+        self.theme_actions = {}
+
+        for mode, label in THEME_MODES.items():
+            action = QAction(label, self, checkable=True)
+            action.setData(mode)
+            action.setChecked(mode == self.theme_mode)
+            action.triggered.connect(
+                lambda checked=False, selected_mode=mode: self.set_theme_mode(
+                    selected_mode
+                )
+            )
+            self.theme_action_group.addAction(action)
+            theme_menu.addAction(action)
+            self.theme_actions[mode] = action
+
+    def set_theme_mode(self, mode):
+        if mode not in THEME_MODES:
+            raise ValueError(f"未知主题模式: {mode}")
+        self.theme_mode = mode
+        self.theme_settings.setValue("appearance/theme", mode)
+        self.theme_actions[mode].setChecked(True)
+        self.apply_theme_mode()
+
+    def apply_theme_mode(self):
+        active_theme = get_system_theme() if self.theme_mode == "system" else self.theme_mode
+        apply_application_theme(active_theme)
+
+    def on_system_theme_changed(self, _color_scheme):
+        if self.theme_mode == "system":
+            self.apply_theme_mode()
+
     def go_to_page(self, page_name):
         self.page_shown.emit(page_name)
         self.stacked_widget.setCurrentWidget(self.pages[page_name])
@@ -1741,6 +1892,7 @@ class InstallerWindow(QMainWindow):
 
 def main():
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
 
     # 设置应用程序字体
     font = QFont("Microsoft YaHei UI", 9)
