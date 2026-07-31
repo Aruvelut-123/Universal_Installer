@@ -3,12 +3,19 @@ name: Build for release
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: Existing release tag to build and update
+        required: true
+        type: string
 
 permissions:
   contents: write
 
 env:
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  RELEASE_TAG: ${{ inputs.tag_name || github.event.release.tag_name }}
 
 jobs:
   build_windows:
@@ -16,6 +23,8 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: ./.github/actions/setup-python-cache
         id: python-cache
         with:
@@ -45,8 +54,9 @@ jobs:
             throw "Expected an x86 PE executable, got machine type 0x$($machine.ToString('x4'))"
           }
       - name: Upload binary and signature to Release
-        uses: softprops/action-gh-release@v2.2.2
+        uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             ./dist/main-windows-x86.exe
 
@@ -55,6 +65,8 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: ./.github/actions/setup-python-cache
         id: python-cache
         with:
@@ -84,8 +96,9 @@ jobs:
             throw "Expected an x86 PE executable, got machine type 0x$($machine.ToString('x4'))"
           }
       - name: Upload uninstaller to Release
-        uses: softprops/action-gh-release@v2.2.2
+        uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             ./dist/uninstall-windows-x86.exe
 
@@ -94,6 +107,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: ./.github/actions/setup-python-cache
         id: python-cache
         with:
@@ -133,8 +148,9 @@ jobs:
           # 验证二进制格式；不启动 GUI，避免无显示环境时等待。
           file main.bin
       - name: Upload binary and signature to Release
-        uses: softprops/action-gh-release@v2.2.2
+        uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             ./main.bin
       - name: Prepare AppDir
@@ -210,8 +226,9 @@ jobs:
           chmod +x appimagetool-x86_64.AppImage
           ARCH=x86_64 ./appimagetool-x86_64.AppImage -v AppDir main.AppImage
       - name: Upload AppImage and signature to Release
-        uses: softprops/action-gh-release@v2.2.2
+        uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             ./main.AppImage
 
@@ -220,6 +237,8 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: ./.github/actions/setup-python-cache
         id: python-cache
         with:
@@ -256,8 +275,9 @@ jobs:
           chmod +x uninstall-linux-x64.bin
           file uninstall-linux-x64.bin
       - name: Upload uninstaller to Release
-        uses: softprops/action-gh-release@v2.2.2
+        uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             ./uninstall-linux-x64.bin
       - name: Prepare uninstaller AppDir
@@ -307,8 +327,9 @@ jobs:
           ARCH=x86_64 ./appimagetool-x86_64.AppImage -v UninstallerAppDir uninstall-linux-x64.AppImage
           chmod +x uninstall-linux-x64.AppImage
       - name: Upload uninstaller AppImage to Release
-        uses: softprops/action-gh-release@v2.2.2
+        uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             ./uninstall-linux-x64.AppImage
 
@@ -317,6 +338,8 @@ jobs:
     runs-on: macos-26-intel
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: ./.github/actions/setup-python-cache
         id: python-cache
         with:
@@ -396,8 +419,9 @@ jobs:
         run: |
           ditto -c -k --keepParent main.app macos.zip
       - name: Upload binary and signature to Release
-        uses: softprops/action-gh-release@v2.2.2
+        uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             ./macos.zip
 
@@ -406,6 +430,8 @@ jobs:
     runs-on: macos-26-intel
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_TAG }}
       - uses: ./.github/actions/setup-python-cache
         id: python-cache
         with:
@@ -444,8 +470,9 @@ jobs:
           codesign --verify --deep --strict uninstall-macos.app
           ditto -c -k --keepParent uninstall-macos.app uninstall-macos.zip
       - name: Upload uninstaller to Release
-        uses: softprops/action-gh-release@v2.2.2
+        uses: softprops/action-gh-release@v3
         with:
+          tag_name: ${{ env.RELEASE_TAG }}
           files: |
             ./uninstall-macos.zip
   changelog:
@@ -454,7 +481,7 @@ jobs:
       - name: Checkout release tag and history
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name }}
+          ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
       
       - name: Install git-cliff
@@ -466,9 +493,9 @@ jobs:
         run: git cliff --current --output RELEASE_NOTES.md
 
       - name: Add changelog to release
-        uses: softprops/action-gh-release@v2.2.2
+        uses: softprops/action-gh-release@v3
         with:
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
           body_path: RELEASE_NOTES.md
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
