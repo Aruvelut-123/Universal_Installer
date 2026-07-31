@@ -69,6 +69,45 @@ jobs:
           name: installer-windows-x86
           path: ./dist/main-windows-x86.exe
 
+  build_windows_uninstaller:
+    name: Build uninstaller for Windows (x86)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-python-cache
+        id: python-cache
+        with:
+          python-version: "3.8.10"
+          architecture: x86
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Save pip cache before build
+        if: steps.python-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.python-cache.outputs.cache-dir }}
+          key: ${{ steps.python-cache.outputs.cache-key }}
+      - name: Verify 32-bit Python
+        run: python -c "import struct; assert struct.calcsize('P') == 4"
+      - name: Build uninstaller (PyInstaller)
+        run: |
+          python -m PyInstaller --onefile --windowed --uac-admin --noconfirm --clean --name uninstall-windows-x86 --icon pack/icon.ico uninstaller.py
+      - name: Verify x86 executable
+        shell: pwsh
+        run: |
+          $binary = [System.IO.File]::ReadAllBytes("dist/uninstall-windows-x86.exe")
+          $peOffset = [BitConverter]::ToInt32($binary, 0x3c)
+          $machine = [BitConverter]::ToUInt16($binary, $peOffset + 4)
+          if ($machine -ne 0x014c) {
+            throw "Expected an x86 PE executable, got machine type 0x$($machine.ToString('x4'))"
+          }
+      - name: Upload uninstaller
+        uses: actions/upload-artifact@v7
+        with:
+          name: uninstaller-windows-x86
+          path: ./dist/uninstall-windows-x86.exe
+
   build_linux:
     name: Build for Linux (AppImage)
     runs-on: ubuntu-22.04
@@ -195,6 +234,44 @@ jobs:
           name: installer-linux-AppImage
           path: ./main.AppImage
 
+  build_linux_uninstaller:
+    name: Build uninstaller for Linux (x86_64)
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-python-cache
+        id: python-cache
+        with:
+          python-version: "3.8.18"
+          architecture: x64
+      - name: Install system dependency
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends patchelf
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Save pip cache before build
+        if: steps.python-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.python-cache.outputs.cache-dir }}
+          key: ${{ steps.python-cache.outputs.cache-key }}
+      - name: Build uninstaller with Nuitka (onefile)
+        run: |
+          python -m nuitka \
+            --onefile \
+            --enable-plugin=pyside6 \
+            --assume-yes-for-downloads \
+            --deployment \
+            --output-filename=uninstall-linux-x64.bin \
+            uninstaller.py
+          chmod +x uninstall-linux-x64.bin
+          file uninstall-linux-x64.bin
+      - name: Upload uninstaller
+        uses: actions/upload-artifact@v7
+        with:
+          name: uninstaller-linux-x64
+          path: ./uninstall-linux-x64.bin
+
   build_macos:
     name: Build for macOS (x86_64 - runs on both Intel & Apple Silicon)
     runs-on: macos-26-intel
@@ -284,3 +361,51 @@ jobs:
         with:
           name: installer-macos-universal-compatible
           path: ./macos.zip
+
+  build_macos_uninstaller:
+    name: Build uninstaller for macOS (x86_64)
+    runs-on: macos-26-intel
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup-python-cache
+        id: python-cache
+        with:
+          python-version: "3.8.18"
+          architecture: x64
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt pillow==10.4.0
+      - name: Save pip cache before build
+        if: steps.python-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: ${{ steps.python-cache.outputs.cache-dir }}
+          key: ${{ steps.python-cache.outputs.cache-key }}
+      - name: Convert icon to .icns
+        run: |
+          python -c "from PIL import Image; image = Image.open('pack/icon.ico').convert('RGBA').resize((256, 256), Image.Resampling.LANCZOS); image.save('pack/uninstaller.icns', format='ICNS')"
+      - name: Build uninstaller app (x86_64)
+        env:
+          MACOSX_DEPLOYMENT_TARGET: "11.0"
+        run: |
+          python -m nuitka \
+            --macos-create-app-bundle \
+            --standalone \
+            --macos-target-arch=x86_64 \
+            --macos-app-icon=pack/uninstaller.icns \
+            --enable-plugin=pyside6 \
+            --assume-yes-for-downloads \
+            uninstaller.py
+          mv uninstaller.app uninstall-macos.app
+      - name: Verify, sign and package
+        run: |
+          file uninstall-macos.app/Contents/MacOS/uninstaller
+          lipo -info uninstall-macos.app/Contents/MacOS/uninstaller | grep -q "x86_64"
+          codesign --force --deep --sign - uninstall-macos.app
+          codesign --verify --deep --strict uninstall-macos.app
+          ditto -c -k --keepParent uninstall-macos.app uninstall-macos.zip
+      - name: Upload uninstaller
+        uses: actions/upload-artifact@v7
+        with:
+          name: uninstaller-macos-x86_64
+          path: ./uninstall-macos.zip
