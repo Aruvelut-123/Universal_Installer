@@ -3,7 +3,6 @@ import os
 import platform
 import sys
 import shutil
-import time
 import ctypes
 import zipfile
 import rarfile
@@ -376,21 +375,33 @@ class InstallThread(QThread):
             else:
                 print(f"[DEBUG] 路径已存在: {self.path}")
 
-            time.sleep(2)
             print("[DEBUG] 准备工作完成，开始安装组件")
             
             # 2. 安装组件
-            total_components = len([c for c in self.components if self.components[c]])
-            step = 95 / total_components if total_components > 0 else 0
-            print(f"[DEBUG] 需要安装的组件数: {total_components}, 每个组件进度步长: {step}")
-            
-            for component in self.components:
-                print(f"[DEBUG] 处理组件: {component}, 是否选中: {self.components[component]}")
-                if self.components[component]:
-                    self.progress_updated.emit(step, f"正在安装组件{component}...")
-                    self._process_component(component)
-            
-            time.sleep(2)
+            selected_components = [
+                component
+                for component, selected in self.components.items()
+                if selected
+            ]
+            total_components = len(selected_components)
+            print(f"[DEBUG] 需要安装的组件数: {total_components}")
+
+            for index, component in enumerate(selected_components, start=1):
+                start_progress = 5 + int((index - 1) * 90 / total_components)
+                print(
+                    f"[DEBUG] 处理组件: {component}, "
+                    f"进度: {index}/{total_components}"
+                )
+                self.progress_updated.emit(
+                    start_progress, f"正在安装组件 {component}..."
+                )
+                self._process_component(component)
+
+                completed_progress = 5 + int(index * 90 / total_components)
+                self.progress_updated.emit(
+                    completed_progress, f"组件 {component} 安装完成"
+                )
+
             self.success = True
             print("[DEBUG] 所有组件安装成功")
             self.progress_updated.emit(100, "安装完成！")
