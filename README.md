@@ -7,7 +7,7 @@
 - 按平台和 CPU 架构选择安装包（Windows、Linux、macOS）。
 - 支持必选组件、可选组件和组件依赖关系。
 - 支持 ZIP、RAR、7z、TAR、TAR.GZ 与 TGZ 压缩包。
-- 自动查找 Steam 与游戏安装目录。
+- 自动查找原生 Steam、Wine、Proton、Winlator 与盖世游戏中的游戏目录。
 - 将运行输出和异常分别写入 `logs/` 目录，方便排查问题。
 
 ## 环境要求
@@ -26,6 +26,17 @@ python -m pip install -r requirements.txt
 ```powershell
 python main.py
 ```
+
+## 兼容环境扫描
+
+自动检测会按以下顺序查找游戏目录：
+
+1. Proton 提供的 `STEAM_COMPAT_INSTALL_PATH` 等环境变量。
+2. 原生 Steam 根目录及 `libraryfolders.vdf` 中的全部游戏库。
+3. 当前游戏 AppID 对应的 `steamapps/compatdata/<AppID>/pfx` 和 Wine 的 `WINEPREFIX`、`drive_c`、`dosdevices` 映射。
+4. Winlator 与 GameSir 盖世游戏容器暴露的 Windows 映射盘，包括常见的 D:、E:、X: 和 Z: 游戏盘。
+
+扫描只检查已知的浅层目录结构，不会递归遍历整块磁盘。在 Winlator 或盖世游戏中使用时，需要在相同容器内运行 Windows 版安装器，并确保游戏目录已映射为容器可访问的盘符。对于直接把游戏根目录映射为盘符的情况，安装器会使用 `game_executable`、`game_executables`，或目录选择提示中的 `.exe` 文件名确认游戏根目录。
 
 ## 配置文件
 
