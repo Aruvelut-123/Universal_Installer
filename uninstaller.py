@@ -371,6 +371,11 @@ def remove_windows_uninstall_entry(registry=None):
 
 
 def resolve_application_directory():
+    appimage = os.environ.get("APPIMAGE")
+    if appimage:
+        appimage_path = Path(appimage).resolve()
+        if appimage_path.is_file():
+            return appimage_path.parent
     launch_file = sys.executable if getattr(sys, "frozen", False) or "__compiled__" in globals() else __file__
     directory = Path(launch_file).resolve().parent
     for parent in (directory, *directory.parents):
@@ -399,6 +404,11 @@ def load_manifest(manifest_path=None):
 
 
 def _current_uninstaller_container(install_root):
+    appimage = os.environ.get("APPIMAGE")
+    if appimage:
+        appimage_path = Path(appimage).resolve()
+        if _is_relative_to(appimage_path, install_root):
+            return appimage_path
     executable = Path(sys.executable).resolve()
     if not _is_relative_to(executable, install_root):
         return None

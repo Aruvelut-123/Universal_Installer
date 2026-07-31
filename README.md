@@ -83,7 +83,7 @@ GitHub Actions 使用固定架构和版本生成以下产物：
 - Linux：Python 3.8.18、PySide6 6.5.3 和 Nuitka，生成二进制文件与 AppImage
 - macOS：`macos-26-intel`、Python 3.8.18、PySide6 6.5.3 和 Nuitka，生成最低部署目标为 macOS 11 的 x86_64 应用
 
-同一批构建还会生成 `uninstall-windows-x86.exe`、`uninstall-linux-x64.bin` 和 `uninstall-macos.zip`。组装安装包时，应将它们放到 `pack/items.json` 的 `uninstaller.*.file` 指定位置。
+同一批构建还会生成 `uninstall-windows-x86.exe`、`uninstall-linux-x64.bin`、`uninstall-linux-x64.AppImage` 和 `uninstall-macos.zip`。Linux 配置默认使用 AppImage，裸二进制保留给需要自行集成的场景。组装安装包时，应将默认产物放到 `pack/items.json` 的 `uninstaller.*.file` 指定位置。
 
 pip 下载缓存按操作系统、Python 版本、解释器架构和 `requirements.txt` 内容隔离，x86 与 x64 构建不会共用错误的缓存。
 

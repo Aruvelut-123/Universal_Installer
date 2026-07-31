@@ -5,8 +5,8 @@
       "executable": "uninstall-windows-x86.exe"
     },
     "linux": {
-      "file": "pack/uninstall-linux-x64.bin",
-      "executable": "uninstall-linux-x64.bin"
+      "file": "pack/uninstall-linux-x64.AppImage",
+      "executable": "uninstall-linux-x64.AppImage"
     },
     "darwin": {
       "file": "pack/uninstall-macos.zip",
@@ -40,7 +40,7 @@
       ],
       "linuxx64file": [
         "pack/LINUXBepInEx64.zip",
-        "pack/uninstall-linux-x64.bin"
+        "pack/uninstall-linux-x64.AppImage"
       ],
       "macfile": [
         "pack/MACBepInEx.zip",
@@ -54,7 +54,7 @@
         "pack/LINUXBepInEx64.zip": "{install_path}",
         "pack/MACBepInEx.zip": "{install_path}",
         "pack/uninstall-windows-x86.exe": "{install_path}",
-        "pack/uninstall-linux-x64.bin": "{install_path}",
+        "pack/uninstall-linux-x64.AppImage": "{install_path}",
         "pack/uninstall-macos.zip": "{install_path}",
         "pack/readme.txt": "{install_path}"
       }
