@@ -173,6 +173,29 @@ except ImportError:
 print(f"Qt binding: {QT_BINDING}")
 installer_metadata: dict[str, Any] | None = None
 
+
+def configure_high_dpi() -> None:
+    """Enable device-independent Qt 5 scaling before QApplication exists."""
+    if QT_BINDING != "PySide2":
+        return
+
+    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
+    set_rounding_policy = getattr(
+        QApplication, "setHighDpiScaleFactorRoundingPolicy", None
+    )
+    policy_enum = getattr(Qt, "HighDpiScaleFactorRoundingPolicy", None)
+    pass_through = (
+        getattr(policy_enum, "PassThrough", None)
+        if policy_enum is not None
+        else None
+    )
+    if pass_through is None:
+        pass_through = getattr(Qt, "PassThrough", None)
+    if set_rounding_policy is not None and pass_through is not None:
+        set_rounding_policy(pass_through)
+
 REQUIRED_INSTALLER_METADATA = {
     "program_name", "short_name", "version", "is_release", "password",
     "author", "has_uninstaller", "need_admin", "main_item",
@@ -2269,6 +2292,7 @@ class InstallerWindow(QMainWindow):
 
 def main():
     configure_windows_app_id()
+    configure_high_dpi()
     app = QApplication(sys.argv)
     app.setApplicationName(PROGRAM_NAME)
     app.setApplicationDisplayName(PROGRAM_NAME)
