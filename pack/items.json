@@ -34,7 +34,7 @@
         "pack/WINBepInEx64.zip": "{install_path}",
         "pack/LINUXBepInEx86.zip": "{install_path}",
         "pack/LINUXBepInEx64.zip": "{install_path}",
-        "pack/MACBepInEx.zip": "{install_path}",
+        "pack/MACBepInEx86.zip": "{install_path}",
         "pack/readme.txt": "{install_path}"
       }
     },
@@ -263,18 +263,37 @@
       }
     },
     {
+      "name": "材质包模组",
+      "required": false,
+      "checked": false,
+      "part_checked": false,
+      "id": "texture_pack",
+      "desc": "<b>材质包模组</b>: 向 BB+ 添加材质包系统！",
+      "after": "other_mods",
+      "dependencies": [
+        "main",
+        "modding_api"
+      ],
+      "files": [
+        "pack/TexturePack.zip"
+      ],
+      "actions": {
+        "pack/TexturePack.zip": "{install_path}"
+      }
+    },
+    {
       "name": "材质包",
       "required": false,
       "checked": false,
       "part_checked": false,
       "disabled": true,
-      "id": "texture_pack",
+      "id": "texture_packs",
       "desc": "<b>材质包</b>: 可选材质包",
       "after": null,
       "dependencies": [
         "main",
         "modding_api",
-        "texture_pack_mod"
+        "texture_pack"
       ],
       "files": null,
       "actions": null
