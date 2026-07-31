@@ -1,7 +1,10 @@
 .venv
 .stfolder
 .idea
-pack
+# Keep local installer payload/configuration private while tracking its example.
+pack/*
+!pack/items_example.json
+/metadata.json
 MOD
 *.zip
 test.py
