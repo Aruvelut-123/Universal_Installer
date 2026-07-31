@@ -1,4 +1,18 @@
 {
+  "uninstaller": {
+    "windows": {
+      "file": "pack/uninstall-windows-x86.exe",
+      "executable": "uninstall-windows-x86.exe"
+    },
+    "linux": {
+      "file": "pack/uninstall-linux-x64.bin",
+      "executable": "uninstall-linux-x64.bin"
+    },
+    "darwin": {
+      "file": "pack/uninstall-macos.zip",
+      "executable": "uninstall-macos.app/Contents/MacOS/uninstaller"
+    }
+  },
   "items": [
     {
       "name": "BB+ 汉化包",
@@ -14,19 +28,23 @@
         "pack/readme.txt"
       ],
       "winx86file": [
-        "pack/WINBepInEx86.zip"
+        "pack/WINBepInEx86.zip",
+        "pack/uninstall-windows-x86.exe"
       ],
       "winx64file": [
-        "pack/WINBepInEx64.zip"
+        "pack/WINBepInEx64.zip",
+        "pack/uninstall-windows-x86.exe"
       ],
       "linuxx86file": [
         "pack/LINUXBepInEx86.zip"
       ],
       "linuxx64file": [
-        "pack/LINUXBepInEx64.zip"
+        "pack/LINUXBepInEx64.zip",
+        "pack/uninstall-linux-x64.bin"
       ],
       "macfile": [
-        "pack/MACBepInEx.zip"
+        "pack/MACBepInEx.zip",
+        "pack/uninstall-macos.zip"
       ],
       "actions": {
         "pack/BBPC.zip": "{install_path}",
@@ -35,6 +53,9 @@
         "pack/LINUXBepInEx86.zip": "{install_path}",
         "pack/LINUXBepInEx64.zip": "{install_path}",
         "pack/MACBepInEx.zip": "{install_path}",
+        "pack/uninstall-windows-x86.exe": "{install_path}",
+        "pack/uninstall-linux-x64.bin": "{install_path}",
+        "pack/uninstall-macos.zip": "{install_path}",
         "pack/readme.txt": "{install_path}"
       }
     },

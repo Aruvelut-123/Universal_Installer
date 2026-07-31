@@ -8,6 +8,8 @@
 - 支持必选组件、可选组件和组件依赖关系。
 - 支持 ZIP、RAR、7z、TAR、TAR.GZ 与 TGZ 压缩包。
 - 自动查找原生 Steam、Wine、Proton、Winlator 与盖世游戏中的游戏目录。
+- 安装完成后保存精确文件清单，并提供 Windows、Linux 与 macOS 卸载器；被覆盖的原文件会在卸载时恢复。
+- Windows 会在“程序和功能”中注册卸载项并指向随程序安装的卸载器。
 - 将运行输出和异常分别写入 `logs/` 目录，方便排查问题。
 
 ## 环境与系统要求
@@ -49,6 +51,7 @@ Windows 安装器虽然是 x86 程序，但会检测操作系统的原生架构�
 | 文件 | 用途 |
 | --- | --- |
 | `main.py` | 安装器界面、组件选择、路径检测与文件解压逻辑 |
+| `uninstaller.py` | 安装事务记录、原文件备份、控制面板注册与安全卸载逻辑 |
 | `metadata_example.json` | 程序名称、版本、权限、图片和注册表等全局配置示例 |
 | `pack/items_example.json` | 安装组件、依赖关系、平台文件和目标路径示例 |
 | `requirements.txt` | 运行依赖与可选构建依赖 |
@@ -56,6 +59,10 @@ Windows 安装器虽然是 x86 程序，但会检测操作系统的原生架构�
 使用前请在本地将示例复制为 `metadata.json` 和 `pack/items.json`。这两个本地配置不会提交到 Git。
 
 `pack/items.json` 中每个组件必须具有唯一的 `id`。`dependencies` 中的每个值都必须引用已存在的组件 ID；`files` 和平台文件列表里的每个文件也必须在 `actions` 中配置目标路径。
+
+顶层 `uninstaller` 对象分别配置 Windows、Linux 和 macOS 的卸载器包。其中 `file` 是随安装组件分发的源文件，`executable` 是安装完成后的可执行文件相对路径。卸载器必须放入必选组件对应的平台文件列表，并在 `actions` 中安装到 `{install_path}`。
+
+`metadata.json` 中的 `registry_key` 与 `uninstall_registry_key` 是可复用安装器时必须自行设置的完整注册表路径，均位于 `Software\...` 下。安装完成后，文件清单与原文件备份索引保存在 `{install_path}/.universal_installer/install_info.uim`；它是带版本标识并使用 zlib 压缩的专用二进制格式，不是明文 JSON。
 
 目标路径可以使用 `{install_path}` 占位符，例如：
 
@@ -75,6 +82,8 @@ GitHub Actions 使用固定架构和版本生成以下产物：
 - Windows：Python 3.8.10、PySide2 5.15.2 和 PyInstaller 5.13.2，生成 `main-windows-x86.exe`
 - Linux：Python 3.8.18、PySide6 6.5.3 和 Nuitka，生成二进制文件与 AppImage
 - macOS：`macos-26-intel`、Python 3.8.18、PySide6 6.5.3 和 Nuitka，生成最低部署目标为 macOS 11 的 x86_64 应用
+
+同一批构建还会生成 `uninstall-windows-x86.exe`、`uninstall-linux-x64.bin` 和 `uninstall-macos.zip`。组装安装包时，应将它们放到 `pack/items.json` 的 `uninstaller.*.file` 指定位置。
 
 pip 下载缓存按操作系统、Python 版本、解释器架构和 `requirements.txt` 内容隔离，x86 与 x64 构建不会共用错误的缓存。
 

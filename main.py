@@ -5,6 +5,7 @@ import json
 import os
 import platform
 import re
+import stat
 import subprocess
 import sys
 import shutil
@@ -21,6 +22,12 @@ from datetime import datetime
 from pathlib import Path
 import traceback
 from typing import Any
+
+from uninstaller import (
+    InstallRecorder,
+    register_windows_uninstaller,
+    remove_windows_uninstall_entry,
+)
 
 try:
     from typing import override
@@ -197,10 +204,10 @@ def configure_high_dpi() -> None:
         set_rounding_policy(pass_through)
 
 REQUIRED_INSTALLER_METADATA = {
-    "program_name", "short_name", "version", "is_release", "password",
+    "program_name", "short_name", "version",
     "author", "has_uninstaller", "need_admin", "main_item",
-    "item_metadata", "registry_key_name",
-    "uninstall_registry_key_name", "footer_info", "license_file",
+    "item_metadata", "registry_key", "uninstall_registry_key",
+    "footer_info", "license_file",
     "left_pic", "header_pic", "icon",
 }
 
@@ -223,11 +230,12 @@ def get_installer_metadata() -> dict:
         "program_name": str,
         "short_name": str,
         "version": str,
-        "is_release": bool,
         "need_admin": bool,
-        "password": str,
+        "has_uninstaller": bool,
         "main_item": int,
         "item_metadata": str,
+        "registry_key": str,
+        "uninstall_registry_key": str,
     }
     invalid_types = [
         key
@@ -245,10 +253,8 @@ def get_installer_metadata() -> dict:
 INSTALLER_METADATA = get_installer_metadata()
 PROGRAM_NAME: str = INSTALLER_METADATA["program_name"]
 VERSION: str = INSTALLER_METADATA["version"]
-IS_RELEASE: bool = INSTALLER_METADATA["is_release"]
-PASSWORD: str = INSTALLER_METADATA["password"]
-REGISTRY_KEY: str = "Software\\" + INSTALLER_METADATA["registry_key_name"]
-UNINSTALL_REG_KEY: str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + INSTALLER_METADATA["uninstall_registry_key_name"]
+REGISTRY_KEY: str = INSTALLER_METADATA["registry_key"]
+UNINSTALL_REG_KEY: str = INSTALLER_METADATA["uninstall_registry_key"]
 WINDOW_SIZE = (640, 480)  # 固定窗口大小
 METADATA_PATH: str = INSTALLER_METADATA["item_metadata"]
 MAIN_ITEM: int = INSTALLER_METADATA["main_item"]
@@ -272,6 +278,38 @@ def get_metadata() -> dict:
         raise ValueError(f"{metadata_path} 必须包含 items 数组")
     if not data["items"]:
         raise ValueError(f"{metadata_path} 的 items 不能为空")
+
+    if INSTALLER_METADATA["has_uninstaller"]:
+        uninstaller = data.get("uninstaller")
+        if not isinstance(uninstaller, dict):
+            raise ValueError(f"{metadata_path} 缺少 uninstaller 对象")
+        for system_name in ("windows", "linux", "darwin"):
+            configuration = uninstaller.get(system_name)
+            if not isinstance(configuration, dict):
+                raise ValueError(
+                    f"{metadata_path} 的 uninstaller.{system_name} 必须是对象"
+                )
+            invalid_fields = [
+                field
+                for field in ("file", "executable")
+                if not isinstance(configuration.get(field), str)
+                or not configuration[field].strip()
+            ]
+            if invalid_fields:
+                raise ValueError(
+                    f"{metadata_path} 的 uninstaller.{system_name} 字段无效: "
+                    f"{', '.join(invalid_fields)}"
+                )
+            executable_parts = configuration["executable"].replace("\\", "/").split("/")
+            if (
+                configuration["executable"].startswith(("/", "\\"))
+                or re.match(r"^[A-Za-z]:", configuration["executable"])
+                or ".." in executable_parts
+            ):
+                raise ValueError(
+                    f"{metadata_path} 的 uninstaller.{system_name}.executable "
+                    "必须是安装目录内的相对路径"
+                )
 
     item_ids = [item.get("id") for item in data["items"] if isinstance(item, dict)]
     if len(item_ids) != len(data["items"]) or any(
@@ -340,6 +378,21 @@ def get_metadata() -> dict:
                 f"组件 {component_id} 缺少 actions: "
                 f"{', '.join(sorted(missing_actions))}"
             )
+
+    if INSTALLER_METADATA["has_uninstaller"]:
+        current_configuration = data["uninstaller"].get(platform.system().lower())
+        if current_configuration:
+            payload = current_configuration["file"]
+            payload_is_required = any(
+                item.get("required")
+                and payload in get_component_files(item)
+                and payload in (item.get("actions") or {})
+                for item in data["items"]
+            )
+            if not payload_is_required:
+                raise ValueError(
+                    f"当前平台卸载器 {payload} 必须属于带 actions 的必选组件"
+                )
 
     dependency_graph = {
         item["id"]: item.get("dependencies", []) for item in data["items"]
@@ -575,7 +628,7 @@ def configure_windows_app_id() -> None:
         part.strip().replace(" ", "_")
         for part in (
             INSTALLER_METADATA["author"],
-            INSTALLER_METADATA["registry_key_name"],
+            REGISTRY_KEY.replace("\\", "."),
             PROGRAM_NAME,
         )
         if part.strip()
@@ -643,6 +696,17 @@ def get_component_files(item: dict) -> list[str]:
             files.extend(platform_files)
             break
     return files
+
+
+def get_uninstaller_configuration() -> dict:
+    """Return and validate the uninstaller payload for the current OS."""
+    if not INSTALLER_METADATA["has_uninstaller"]:
+        return {}
+    system = platform.system().lower()
+    configuration = get_metadata()["uninstaller"].get(system)
+    if not configuration:
+        raise ValueError(f"当前操作系统没有卸载器配置: {system}")
+    return dict(configuration)
 
 
 def get_default_install_path(item: dict) -> str:
@@ -871,6 +935,7 @@ class InstallThread(QThread):
             item["id"]: item for item in get_metadata()["items"]
         }
         self.success = False
+        self.recorder = None
         print(f"[DEBUG] InstallThread初始化: path={path}, components={components}")
 
     def _resolve_install_order(self):
@@ -984,31 +1049,74 @@ class InstallThread(QThread):
             if not inside_destination:
                 raise ValueError(f"压缩包路径越界: {member_name}")
 
-    @staticmethod
-    def _extract_archive(archive_name, archive_type, in_path):
+    def _prepare_archive_entries(self, entries, destination):
+        """Back up archive targets before extraction and record new directories."""
+        for member_name, is_directory in entries:
+            normalized = member_name.replace("\\", "/").rstrip("/")
+            if not normalized or normalized == ".":
+                continue
+            target = Path(destination).joinpath(*normalized.split("/"))
+            if is_directory:
+                self.recorder.prepare_directory(target)
+            else:
+                self.recorder.prepare_file(target)
+
+    def _extract_archive(self, archive_name, archive_type, in_path):
         """解压文件并确保压缩包句柄及时关闭。"""
         if archive_type == 'zip':
             with zipfile.ZipFile(archive_name, "r") as archive:
-                InstallThread._validate_archive_members(
-                    (info.filename for info in archive.infolist()), in_path
+                infos = archive.infolist()
+                self._validate_archive_members((info.filename for info in infos), in_path)
+                for info in infos:
+                    if stat.S_ISLNK(info.external_attr >> 16):
+                        raise ValueError(f"ZIP 压缩包包含符号链接: {info.filename}")
+                self._prepare_archive_entries(
+                    ((info.filename, info.is_dir()) for info in infos), in_path
                 )
                 archive.extractall(in_path)
+                for info in infos:
+                    mode = info.external_attr >> 16
+                    if not info.is_dir() and mode & 0o111:
+                        extracted = Path(in_path).joinpath(
+                            *info.filename.replace("\\", "/").split("/")
+                        )
+                        extracted.chmod(extracted.stat().st_mode | (mode & 0o111))
         elif archive_type == 'rar':
             with rarfile.RarFile(archive_name, "r") as archive:
-                InstallThread._validate_archive_members(
-                    (info.filename for info in archive.infolist()), in_path
+                infos = archive.infolist()
+                self._validate_archive_members((info.filename for info in infos), in_path)
+                for info in infos:
+                    is_symlink = getattr(info, "is_symlink", None)
+                    if is_symlink is not None and is_symlink():
+                        raise ValueError(f"RAR 压缩包包含符号链接: {info.filename}")
+                self._prepare_archive_entries(
+                    ((info.filename, info.is_dir()) for info in infos), in_path
                 )
                 archive.extractall(in_path)
         elif archive_type == '7z':
             with py7zr.SevenZipFile(archive_name, "r") as archive:
-                InstallThread._validate_archive_members(archive.getnames(), in_path)
+                entries = archive.list()
+                self._validate_archive_members((entry.filename for entry in entries), in_path)
+                self._prepare_archive_entries(
+                    ((entry.filename, entry.is_directory) for entry in entries), in_path
+                )
                 archive.extractall(in_path)
         elif archive_type == 'tar':
             with tarfile.open(archive_name, "r:*") as archive:
-                InstallThread._validate_archive_members(
-                    (info.name for info in archive.getmembers()), in_path
+                members = archive.getmembers()
+                self._validate_archive_members((info.name for info in members), in_path)
+                unsupported = [
+                    info.name for info in members if not (info.isfile() or info.isdir())
+                ]
+                if unsupported:
+                    raise ValueError(
+                        f"TAR 压缩包包含不支持的链接或设备: {unsupported[0]}"
+                    )
+                self._prepare_archive_entries(
+                    ((info.name, info.isdir()) for info in members), in_path
                 )
-                archive.extractall(in_path, filter="data")
+                # Python 3.8 没有 extractall(filter=...)；上方已完成等价安全检查。
+                archive.extractall(in_path, members=members)
         elif archive_type in {'gzip', 'bzip2', 'xz'}:
             opener, suffix = {
                 'gzip': (gzip.open, '.gz'),
@@ -1019,6 +1127,7 @@ class InstallThread(QThread):
             if not output_name:
                 raise ValueError(f"无法确定解压后的文件名: {archive_name}")
             output_path = os.path.join(in_path, output_name)
+            self.recorder.prepare_file(output_path)
             with opener(archive_name, 'rb') as source, open(output_path, 'wb') as target:
                 shutil.copyfileobj(source, target)
         else:
@@ -1039,9 +1148,10 @@ class InstallThread(QThread):
             file.replace("\\", os.sep).replace("/", os.sep)
         )
         if file_type is None:
-            os.makedirs(in_path, exist_ok=True)
-            print(f"[DEBUG] 普通文件直接复制: {file_path} -> {in_path}")
-            shutil.copy2(file_path, in_path)
+            destination = Path(in_path) / Path(file_path).name
+            self.recorder.prepare_file(destination)
+            print(f"[DEBUG] 普通文件直接复制: {file_path} -> {destination}")
+            shutil.copy2(file_path, str(destination))
             return
 
         print(f"[DEBUG] 调用run_extract: archive={file_path}, type={file_type}, in_path={in_path}")
@@ -1068,6 +1178,7 @@ class InstallThread(QThread):
 
     def run(self):
         print("[DEBUG] run()方法开始执行")
+        registered_uninstaller = None
         try:
             # 0. 准备工作
             print("[DEBUG] 开始准备安装环境...")
@@ -1084,6 +1195,15 @@ class InstallThread(QThread):
             # 2. 安装组件
             selected_components = self._resolve_install_order()
             total_components = len(selected_components)
+            if total_components == 0:
+                raise ValueError("没有可安装的组件")
+            uninstaller_configuration = get_uninstaller_configuration()
+            self.recorder = InstallRecorder(
+                self.path,
+                INSTALLER_METADATA,
+                selected_components,
+                uninstaller_configuration,
+            )
             print(f"[DEBUG] 需要安装的组件数: {total_components}")
 
             for index, component in enumerate(selected_components, start=1):
@@ -1102,6 +1222,25 @@ class InstallThread(QThread):
                     completed_progress, f"组件 {component} 安装完成"
                 )
 
+            if uninstaller_configuration:
+                uninstaller_path = (
+                    Path(self.path).resolve()
+                    / Path(uninstaller_configuration["executable"])
+                )
+                if not uninstaller_path.is_file():
+                    raise FileNotFoundError(f"卸载程序安装失败: {uninstaller_path}")
+                if platform.system().lower() != "windows":
+                    uninstaller_path.chmod(uninstaller_path.stat().st_mode | 0o111)
+                registered_uninstaller = register_windows_uninstaller(
+                    INSTALLER_METADATA,
+                    self.path,
+                    uninstaller_path,
+                    self.recorder.estimated_size(),
+                )
+                self.recorder.set_registry(registered_uninstaller)
+
+            self.recorder.finalize()
+
             self.success = True
             print("[DEBUG] 所有组件安装成功")
             self.progress_updated.emit(100, "安装完成！")
@@ -1110,6 +1249,10 @@ class InstallThread(QThread):
             print(f"[ERROR] 安装过程中发生异常: {e}")
             traceback.print_exc()
             self.progress_updated.emit(0, f"安装失败: {str(e)}")
+            if registered_uninstaller:
+                remove_windows_uninstall_entry(registered_uninstaller)
+            if self.recorder is not None:
+                self.recorder.rollback()
         finally:
             print(f"[DEBUG] run()方法结束，success={self.success}")
             self.finished.emit(self.success)
@@ -1131,7 +1274,7 @@ class InstallThread(QThread):
         # 确保目标目录存在
         if not os.path.exists(in_path):
             print(f"[DEBUG] 目标目录不存在，创建: {in_path}")
-            os.makedirs(in_path, exist_ok=True)
+        self.recorder.prepare_directory(in_path)
         
         self.progress_updated.emit(0, f"正在解压文件{archive_name}到{in_path}")
         
@@ -1364,58 +1507,7 @@ class LicensePage(BasePage):
 
     def on_accept(self):
         if self.agree_checkbox.isChecked():
-            if IS_RELEASE:
-                self.parent.go_to_page("components")
-            else:
-                self.parent.go_to_page("password")
-
-    def on_cancel(self):
-        self.parent.cancel_installation()
-
-
-# 密码页面
-class PasswordPage(BasePage):
-    def setup_ui(self):
-        self.title_label.setText(PROGRAM_NAME)
-        self.subtitle_label.setText("程序需要一个正确的安装密码才能继续")
-
-        # 添加密码输入区域
-        password_group = QGroupBox("密码输入框")
-        password_layout = QVBoxLayout(password_group)
-
-        if "qq_group" in get_installer_metadata():
-            # 添加提示文本
-            tip_label = QLabel("请加群 "+get_installer_metadata()["qq_group"]+" 获取密码！")
-            tip_label.setStyleSheet("font-size: 9pt; color: #4BA348; font-weight: bold;")
-            password_layout.addWidget(tip_label)
-
-        # 密码输入框
-        password_form = QHBoxLayout()
-        password_label = QLabel("密码:")
-        self.password_input = QLineEdit()
-        self.password_input.setEchoMode(QLineEdit.Password)
-        self.password_input.setPlaceholderText("输入安装密码")
-
-        password_form.addWidget(password_label)
-        password_form.addWidget(self.password_input)
-
-        password_layout.addLayout(password_form)
-
-        self.content_layout.addWidget(password_group)
-
-        # 添加按钮
-        back_btn = self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("license"))
-        self.next_button = self.add_button("下一步(N)", self.on_next, "primary")
-        self.add_button("取消(C)", self.on_cancel)
-
-        # 连接回车键
-        self.password_input.returnPressed.connect(self.on_next)
-
-    def on_next(self):
-        if self.password_input.text() == PASSWORD:
             self.parent.go_to_page("components")
-        else:
-            QMessageBox.warning(self, "密码错误", "请输入正确的安装密码！")
 
     def on_cancel(self):
         self.parent.cancel_installation()
@@ -1545,10 +1637,7 @@ class ComponentsPage(BasePage):
         self.content_layout.addWidget(components_group)
 
         # 添加按钮
-        if IS_RELEASE:
-            back_btn = self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("license"))
-        else:
-            back_btn = self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("password"))
+        back_btn = self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("license"))
         self.next_button = self.add_button("下一步(N)", self.on_next, "primary")
         self.next_button.setEnabled(not self.has_missing_required_files)
         self.add_button("取消(C)", self.on_cancel)
@@ -2225,25 +2314,14 @@ class InstallerWindow(QMainWindow):
         self.install_success = False
 
         # 初始化页面
-        if IS_RELEASE:
-            self.pages = {
-                "welcome": WelcomePage(self, True, False, default_path=self.default_path),
-                "license": LicensePage(self),
-                "components": ComponentsPage(self),
-                "directory": DirectoryPage(self),
-                "install": InstallPage(self),
-                "finish": FinishPage(self)
-            }
-        else:
-            self.pages = {
-                "welcome": WelcomePage(self, True, False, default_path=self.default_path),
-                "license": LicensePage(self),
-                "password": PasswordPage(self),
-                "components": ComponentsPage(self),
-                "directory": DirectoryPage(self),
-                "install": InstallPage(self),
-                "finish": FinishPage(self)
-            }
+        self.pages = {
+            "welcome": WelcomePage(self, True, False, default_path=self.default_path),
+            "license": LicensePage(self),
+            "components": ComponentsPage(self),
+            "directory": DirectoryPage(self),
+            "install": InstallPage(self),
+            "finish": FinishPage(self)
+        }
 
         # 添加页面到堆栈
         for name, page in self.pages.items():

@@ -2,17 +2,15 @@
  "program_name": "BB+ 汉化模组安装程序",
  "short_name": "BB+ 汉化包",
  "version": "1.18.4",
- "is_release": true,
  "need_admin": true,
- "password": "0",
  "has_uninstaller": true,
  "is_steam_game": true,
  "game_name": "Baldi's Basics Plus",
  "game_id": 1275890,
  "main_item": 0,
  "item_metadata": "pack/items.json",
- "registry_key_name": "BBPlusSChinese",
- "uninstall_registry_key_name": "bbpchinese",
+ "registry_key": "Software\\BBPlusSChinese",
+ "uninstall_registry_key": "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\bbpchinese",
  "author": "Baymaxawa & MEMZSystem32",
  "footer_info": "作者: Baymaxawa & MEMZSystem32",
  "license_file": "pack/LICENSE",
@@ -21,6 +19,5 @@
  "icon": "pack/icon.ico",
  "qq_group": "873338741",
  "select_directory_title": "请选择 BALDI.exe 程序所在的文件夹（路径不能有中文！！！）",
- "select_directory_tip": "Steam 上右键属性点击管理点击浏览本地文件即可找到",
- "launch_game": "steam://run/1275890"
+ "select_directory_tip": "Steam 上右键属性点击管理点击浏览本地文件即可找到"
 }
