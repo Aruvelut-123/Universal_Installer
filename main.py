@@ -1,3 +1,4 @@
+import atexit
 import json
 import os
 import platform
@@ -12,38 +13,49 @@ import rarfile
 import py7zr
 import tarfile
 from datetime import datetime
+from pathlib import Path
 import traceback
+from typing import Any, override
+
+
+def resolve_application_directory() -> Path:
+    """Locate external assets beside the source file or compiled executable."""
+    launch_file = sys.argv[0] if "__compiled__" in globals() else __file__
+    directory = Path(launch_file).resolve().parent
+    for parent in (directory, *directory.parents):
+        if parent.suffix.lower() == ".app":
+            return parent.parent
+    return directory
+
+
+APPLICATION_DIR = resolve_application_directory()
+os.chdir(APPLICATION_DIR)
 
 # ============ REDIRECT STDOUT/STDERR TO FILES ============
 class TeeLogger:
     """Writes to both original stdout/stderr and log files"""
     def __init__(self, filename, mode='a', original_stream=None):
         self.original_stream = original_stream
-        self.filename = filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.filename = APPLICATION_DIR / "logs" / f"{filename}_{timestamp}.log"
         self.mode = mode
         self.file = None
         
     def write(self, message):
         if self.file is None:
             try:
-                # Create logs directory
-                log_dir = "logs"
-                if not os.path.exists(log_dir):
-                    os.makedirs(log_dir)
-                
-                # Create file with timestamp
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                self.filename = os.path.join(log_dir, f"{self.filename}_{timestamp}.log")
+                self.filename.parent.mkdir(parents=True, exist_ok=True)
                 self.file = open(self.filename, self.mode, encoding='utf-8')
-            except Exception as e:
-                print(f"Failed to create log file: {e}")
+            except OSError as error:
+                if self.original_stream:
+                    self.original_stream.write(f"Failed to create log file: {error}\n")
                 return
         
         # Write to file
         try:
             self.file.write(message)
             self.file.flush()
-        except:
+        except (OSError, ValueError):
             pass
         
         # Also write to original stream (console)
@@ -51,19 +63,19 @@ class TeeLogger:
             try:
                 self.original_stream.write(message)
                 self.original_stream.flush()
-            except:
+            except (OSError, ValueError):
                 pass
     
     def flush(self):
         try:
             if self.file:
                 self.file.flush()
-        except:
+        except (OSError, ValueError):
             pass
         if self.original_stream:
             try:
                 self.original_stream.flush()
-            except:
+            except (OSError, ValueError):
                 pass
     
     def close(self):
@@ -71,21 +83,20 @@ class TeeLogger:
             if self.file:
                 self.file.close()
                 self.file = None
-        except:
+        except (OSError, ValueError):
             pass
 
 # Save original stdout/stderr
 original_stdout = sys.stdout
 original_stderr = sys.stderr
 
-# Create log files with timestamps
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
 # Redirect stdout to output.log
-sys.stdout = TeeLogger(f"output_{timestamp}", 'w', original_stdout)
+sys.stdout = TeeLogger("output", 'w', original_stdout)
 
 # Redirect stderr to debug.log
-sys.stderr = TeeLogger(f"debug_{timestamp}", 'w', original_stderr)
+sys.stderr = TeeLogger("debug", 'w', original_stderr)
+atexit.register(sys.stdout.close)
+atexit.register(sys.stderr.close)
 
 # Also capture unhandled exceptions to debug.log
 def global_exception_handler(exc_type, exc_value, exc_traceback):
@@ -108,8 +119,6 @@ def global_exception_handler(exc_type, exc_value, exc_traceback):
 sys.excepthook = global_exception_handler
 
 # Log startup information
-if platform.system().lower() == "darwin":
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
 print("=" * 80)
 print(f"Application started at {datetime.now()}")
 print(f"Python version: {sys.version}")
@@ -119,15 +128,7 @@ print(f"Working directory: {os.getcwd()}")
 print(f"Command line: {' '.join(sys.argv)}")
 print(f"Process ID: {os.getpid()}")
 print("=" * 80)
-# Switch CWD immediately so every relative path below this line Just Works
-if ".app" in os.getcwd():
-    print("Found .app folder, going up three folders")
-    os.chdir("../../..")
-else:
-    os.chdir(os.getcwd())
-print("Found app directory: ", os.getcwd())
-
-from typing import override, Any
+print("Found app directory: ", APPLICATION_DIR)
 
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QStackedWidget, QVBoxLayout, QHBoxLayout,
@@ -139,67 +140,104 @@ from PySide6.QtGui import (
     QAction, QActionGroup, QColor, QFont, QIcon, QPalette, QPixmap
 )
 from PySide6.QtCore import QSettings, QSize, Qt, QThread, Signal
-metadata : dict = {}
-installer_metadata : dict = {}
+installer_metadata: dict[str, Any] | None = None
+
+REQUIRED_INSTALLER_METADATA = {
+    "program_name", "short_name", "version", "is_release", "password",
+    "has_uninstaller", "main_item", "item_metadata", "registry_key_name",
+    "uninstall_registry_key_name", "footer_info", "license_file",
+    "left_pic", "header_pic", "icon",
+}
 
 def get_installer_metadata() -> dict:
     global installer_metadata
-    if installer_metadata != {}:
+    if installer_metadata is not None:
         return installer_metadata
     try:
-        with open("metadata.json", "r", encoding='utf-8') as file:
-            f = json.load(file)
-            if "program_name" in f:
-                if "short_name" in f:
-                    if "version" in f:
-                        if "is_release" in f:
-                            if "password" in f:
-                                if "has_uninstaller" in f:
-                                    if "main_item" in f:
-                                        if "item_metadata" in f:
-                                            if "registry_key_name" in f:
-                                                if "uninstall_registry_key_name" in f:
-                                                    if "footer_info" in f:
-                                                        if "license_file" in f:
-                                                            if "left_pic" in f:
-                                                                if "header_pic" in f:
-                                                                    if "icon" in f:
-                                                                        installer_metadata = f
-                                                                        return f
-            print("Metadata file not complete! continue with risks!")
-            installer_metadata = f
-            return f
-    except Exception as e:
-        print(e)
-        installer_metadata = {}
-        return {}
+        with (APPLICATION_DIR / "metadata.json").open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"无法读取 metadata.json: {error}") from error
+
+    if not isinstance(data, dict):
+        raise ValueError("metadata.json 的顶层必须是对象")
+    missing = REQUIRED_INSTALLER_METADATA - data.keys()
+    if missing:
+        raise ValueError(f"metadata.json 缺少字段: {', '.join(sorted(missing))}")
+    installer_metadata = data
+    return installer_metadata
+
+# 全局常量
+INSTALLER_METADATA = get_installer_metadata()
+PROGRAM_NAME: str = INSTALLER_METADATA["program_name"]
+VERSION: str = INSTALLER_METADATA["version"]
+IS_RELEASE: bool = INSTALLER_METADATA["is_release"]
+PASSWORD: str = INSTALLER_METADATA["password"]
+REGISTRY_KEY: str = "Software\\" + INSTALLER_METADATA["registry_key_name"]
+UNINSTALL_REG_KEY: str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\" + INSTALLER_METADATA["uninstall_registry_key_name"]
+WINDOW_SIZE = (640, 480)  # 固定窗口大小
+METADATA_PATH: str = INSTALLER_METADATA["item_metadata"]
+MAIN_ITEM: int = INSTALLER_METADATA["main_item"]
+
+metadata: dict[str, Any] | None = None
+
 
 def get_metadata() -> dict:
     global metadata
-    if metadata != {}:
+    if metadata is not None:
         return metadata
-    try:
-        temp = METADATA_PATH.split("\\")
-        rpath = os.getcwd()
-        for path in temp:
-            rpath = os.path.join(rpath, path)
-        with open(rpath, "r", encoding='utf-8') as file:
-            metadata = json.load(file)
-            return metadata
-    except Exception as e:
-        print(e)
-        return {}
 
-# 全局常量
-PROGRAM_NAME : str = get_installer_metadata()["program_name"]
-VERSION : str = get_installer_metadata()["version"]
-IS_RELEASE : bool = get_installer_metadata()["is_release"]
-PASSWORD : str = get_installer_metadata()["password"]
-REGISTRY_KEY : str = "Software\\"+get_installer_metadata()["registry_key_name"]
-UNINSTALL_REG_KEY : str = "Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\"+get_installer_metadata()["uninstall_registry_key_name"]
-WINDOW_SIZE = (640, 480)  # 固定窗口大小
-METADATA_PATH : str = get_installer_metadata()["item_metadata"]
-MAIN_ITEM : int = get_installer_metadata()["main_item"]
+    metadata_path = APPLICATION_DIR / Path(METADATA_PATH.replace("\\", "/"))
+    try:
+        with metadata_path.open("r", encoding="utf-8") as file:
+            data = json.load(file)
+    except (OSError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"无法读取组件配置 {metadata_path}: {error}") from error
+
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        raise ValueError(f"{metadata_path} 必须包含 items 数组")
+    if not data["items"]:
+        raise ValueError(f"{metadata_path} 的 items 不能为空")
+
+    item_ids = [item.get("id") for item in data["items"] if isinstance(item, dict)]
+    if len(item_ids) != len(data["items"]) or any(not item_id for item_id in item_ids):
+        raise ValueError(f"{metadata_path} 中每个组件都必须是带 id 的对象")
+    if len(item_ids) != len(set(item_ids)):
+        raise ValueError(f"{metadata_path} 中存在重复组件 id")
+    known_ids = set(item_ids)
+    file_keys = (
+        "files", "winx86file", "winx64file", "winarm64file",
+        "linuxx86file", "linuxx64file", "linuxarm64file", "macfile",
+        "x86file", "x64file",
+    )
+    for item in data["items"]:
+        component_id = item["id"]
+        missing_dependencies = set(item.get("dependencies", [])) - known_ids
+        if missing_dependencies:
+            raise ValueError(
+                f"组件 {component_id} 引用了不存在的依赖: "
+                f"{', '.join(sorted(missing_dependencies))}"
+            )
+        parent_id = item.get("after")
+        if parent_id is not None and parent_id not in known_ids:
+            raise ValueError(f"组件 {component_id} 的 after 指向不存在的组件 {parent_id}")
+        configured_files = [
+            file_name
+            for key in file_keys
+            for file_name in (item.get(key) or [])
+        ]
+        actions = item.get("actions") or {}
+        missing_actions = set(configured_files) - actions.keys()
+        if missing_actions:
+            raise ValueError(
+                f"组件 {component_id} 缺少 actions: "
+                f"{', '.join(sorted(missing_actions))}"
+            )
+
+    if not 0 <= MAIN_ITEM < len(data["items"]):
+        raise ValueError(f"main_item={MAIN_ITEM} 超出 items 范围")
+    metadata = data
+    return metadata
 
 THEME_MODES = {
     "system": "跟随系统",
@@ -389,9 +427,8 @@ def is_admin():
     try:
         if platform.system().lower() == "windows":
             return ctypes.windll.shell32.IsUserAnAdmin()
-        else:
-            return True
-    except:
+        return True
+    except (AttributeError, OSError):
         return False
 
 # 安装线程
@@ -409,28 +446,38 @@ class InstallThread(QThread):
     def _get_platform_files_key(self):
         """根据当前平台和架构返回对应的文件键名"""
         system = platform.system().lower()
-        machine = platform.machine()
+        machine = platform.machine().lower()
         
         print(f"[DEBUG] 检测平台: system={system}, machine={machine}")
         
         platform_map = {
             'windows': {
-                'AMD64': 'winx64file',
-                'x86': 'winx86file'
+                'amd64': 'winx64file',
+                'x86_64': 'winx64file',
+                'x64': 'winx64file',
+                'i386': 'winx86file',
+                'i686': 'winx86file',
+                'x86': 'winx86file',
+                'arm64': 'winarm64file',
+                'aarch64': 'winarm64file',
             },
             'linux': {
                 'x86_64': 'linuxx64file',
-                'i386': 'linuxx86file'
+                'amd64': 'linuxx64file',
+                'i386': 'linuxx86file',
+                'i686': 'linuxx86file',
+                'x86': 'linuxx86file',
+                'arm64': 'linuxarm64file',
+                'aarch64': 'linuxarm64file',
             },
-            'darwin': {
-                'default': 'macfile'
-            }
         }
-        
+
+        if system == 'darwin':
+            return 'macfile'
         if system in platform_map:
-            if system == 'darwin':
-                return 'macfile'
-            return platform_map[system].get(machine)
+            key = platform_map[system].get(machine)
+            if key:
+                return key
         
         print(f"[DEBUG] 不支持的平台: {system}/{machine}")
         return None
@@ -447,19 +494,12 @@ class InstallThread(QThread):
         in_path = item["actions"][file]
         print(f"[DEBUG] 原始actions路径: {in_path}")
         in_path = in_path.replace("{install_path}", self.path)
-        in_path = in_path.replace("/", "\\")
+        in_path = os.path.normpath(
+            in_path.replace("\\", os.sep).replace("/", os.sep)
+        )
+        if not os.path.isabs(in_path):
+            in_path = os.path.abspath(in_path)
         print(f"[DEBUG] 替换后的路径: {in_path}")
-        
-        # 非Windows系统
-        if platform.system().lower() != "windows":
-            # 使用os.path.join规范化路径
-            temp = in_path.split("\\")
-            in_path = os.path.join(*temp)  # 更简洁的方式
-            print(f"[DEBUG] os.path.join后的路径: {in_path}")
-        
-            # 添加前缀
-            in_path = "/" + in_path
-            print(f"[DEBUG] 非Windows系统，添加前缀: {in_path}")
         
         # 获取文件类型
         file_type = self._get_file_type(file)
@@ -493,20 +533,49 @@ class InstallThread(QThread):
         return None
 
     @staticmethod
+    def _validate_archive_members(member_names, destination):
+        """Reject archive members that would escape the destination directory."""
+        destination = os.path.realpath(destination)
+        for member_name in member_names:
+            normalized_name = member_name.replace("\\", "/")
+            drive, _ = os.path.splitdrive(normalized_name)
+            if drive or normalized_name.startswith("/"):
+                raise ValueError(f"压缩包包含绝对路径: {member_name}")
+            target = os.path.realpath(
+                os.path.join(destination, *normalized_name.split("/"))
+            )
+            try:
+                inside_destination = os.path.commonpath([destination, target]) == destination
+            except ValueError:
+                inside_destination = False
+            if not inside_destination:
+                raise ValueError(f"压缩包路径越界: {member_name}")
+
+    @staticmethod
     def _extract_archive(archive_name, archive_type, in_path):
         """解压文件并确保压缩包句柄及时关闭。"""
         if archive_type == 'zip':
             with zipfile.ZipFile(archive_name, "r") as archive:
+                InstallThread._validate_archive_members(
+                    (info.filename for info in archive.infolist()), in_path
+                )
                 archive.extractall(in_path)
         elif archive_type == 'rar':
             with rarfile.RarFile(archive_name, "r") as archive:
+                InstallThread._validate_archive_members(
+                    (info.filename for info in archive.infolist()), in_path
+                )
                 archive.extractall(in_path)
         elif archive_type == '7z':
             with py7zr.SevenZipFile(archive_name, "r") as archive:
+                InstallThread._validate_archive_members(archive.getnames(), in_path)
                 archive.extractall(in_path)
         elif archive_type == 'tar':
             with tarfile.open(archive_name, "r:*") as archive:
-                archive.extractall(in_path)
+                InstallThread._validate_archive_members(
+                    (info.name for info in archive.getmembers()), in_path
+                )
+                archive.extractall(in_path, filter="data")
         elif archive_type in {'gzip', 'bzip2', 'xz'}:
             opener, suffix = {
                 'gzip': (gzip.open, '.gz'),
@@ -580,18 +649,19 @@ class InstallThread(QThread):
             
             # 如果平台特定文件找不到，尝试查找替代方案
             elif platform_key:
-                # Windows可能同时有32位和64位，尝试另一个
-                if platform.system().lower() == "windows":
-                    alt_key = 'winx86file' if platform_key == 'winx64file' else 'winx64file'
-                    if alt_key in item:
-                        print(f"[DEBUG] 尝试使用替代架构: {alt_key}")
-                        self._process_files(item[alt_key], item)
-                # Linux类似
-                elif platform.system().lower() == "linux":
-                    alt_key = 'linuxx86file' if platform_key == 'linuxx64file' else 'linuxx64file'
-                    if alt_key in item:
-                        print(f"[DEBUG] 尝试使用替代架构: {alt_key}")
-                        self._process_files(item[alt_key], item)
+                fallback_map = {
+                    'winarm64file': ('winx64file', 'winx86file'),
+                    'winx64file': ('winx86file',),
+                    'winx86file': ('winx64file',),
+                    'linuxarm64file': ('linuxx64file', 'linuxx86file'),
+                    'linuxx64file': ('linuxx86file',),
+                    'linuxx86file': ('linuxx64file',),
+                }
+                for fallback_key in fallback_map.get(platform_key, ()):
+                    if item.get(fallback_key):
+                        print(f"[DEBUG] 尝试使用替代架构: {fallback_key}")
+                        self._process_files(item[fallback_key], item)
+                        break
 
     def run(self):
         print("[DEBUG] run()方法开始执行")
@@ -649,14 +719,17 @@ class InstallThread(QThread):
     def run_extract(self, archive_name, archive_type, in_path):
         print(f"[DEBUG] run_extract开始: archive_name={archive_name}, archive_type={archive_type}, in_path={in_path}")
         
-        # 构建完整路径
-        temp = archive_name.split("\\")
-        archive_name = os.getcwd()
-        archive_name = os.path.join(archive_name, *temp)  # 更简洁
+        # 调用方可传相对或绝对路径；只规范化一次，避免重复拼接盘符。
+        archive_name = os.path.abspath(
+            archive_name.replace("\\", os.sep).replace("/", os.sep)
+        )
         print(f"[DEBUG] 构建完整压缩包路径: {archive_name}")
         print(f"[DEBUG] 检查压缩包是否存在: {os.path.exists(archive_name)}")
         print(f"[DEBUG] 目标目录是否存在: {os.path.exists(in_path)}")
-        
+
+        if not os.path.isfile(archive_name):
+            raise FileNotFoundError(f"压缩包不存在: {archive_name}")
+
         # 确保目标目录存在
         if not os.path.exists(in_path):
             print(f"[DEBUG] 目标目录不存在，创建: {in_path}")
@@ -676,9 +749,8 @@ class InstallThread(QThread):
             
         except Exception as e:
             print(f"[ERROR] 解压失败: {e}")
-            import traceback
             traceback.print_exc()
-            raise e
+            raise
 
 # 基础页面模板
 class BasePage(QWidget):
