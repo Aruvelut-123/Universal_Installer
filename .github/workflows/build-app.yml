@@ -9,7 +9,6 @@ on:
       - 'metadata.json'
       - 'LICENSE'
       - 'pack/**'
-      - '.github/workflows/**'
   pull_request:
     branches: [ "master" ]
     paths-ignore:
@@ -18,7 +17,6 @@ on:
       - 'metadata.json'
       - 'LICENSE'
       - 'pack/**'
-      - '.github/workflows/**'
   workflow_dispatch:
 
 concurrency:
