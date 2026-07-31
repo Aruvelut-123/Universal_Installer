@@ -50,6 +50,8 @@ class TeeLogger:
             except OSError as error:
                 if self.original_stream:
                     self.original_stream.write(f"Failed to create log file: {error}\n")
+                    self.original_stream.write(message)
+                    self.original_stream.flush()
                 return
         
         # Write to file
@@ -137,15 +139,14 @@ from PySide6.QtWidgets import (
     QProgressBar, QGroupBox, QFrame, QMessageBox, QTreeWidget,
     QTreeWidgetItem
 )
-from PySide6.QtGui import (
-    QAction, QActionGroup, QColor, QFont, QIcon, QPalette, QPixmap
-)
-from PySide6.QtCore import QSettings, QSignalBlocker, Qt, QThread, Signal
+from PySide6.QtGui import QColor, QFont, QIcon, QPalette, QPixmap
+from PySide6.QtCore import QSignalBlocker, Qt, QThread, Signal
 installer_metadata: dict[str, Any] | None = None
 
 REQUIRED_INSTALLER_METADATA = {
     "program_name", "short_name", "version", "is_release", "password",
-    "has_uninstaller", "main_item", "item_metadata", "registry_key_name",
+    "author", "has_uninstaller", "need_admin", "main_item",
+    "item_metadata", "registry_key_name",
     "uninstall_registry_key_name", "footer_info", "license_file",
     "left_pic", "header_pic", "icon",
 }
@@ -165,6 +166,25 @@ def get_installer_metadata() -> dict:
     missing = REQUIRED_INSTALLER_METADATA - data.keys()
     if missing:
         raise ValueError(f"metadata.json 缺少字段: {', '.join(sorted(missing))}")
+    expected_types = {
+        "program_name": str,
+        "short_name": str,
+        "version": str,
+        "is_release": bool,
+        "need_admin": bool,
+        "password": str,
+        "main_item": int,
+        "item_metadata": str,
+    }
+    invalid_types = [
+        key
+        for key, expected_type in expected_types.items()
+        if type(data[key]) is not expected_type
+    ]
+    if invalid_types:
+        raise ValueError(
+            f"metadata.json 字段类型错误: {', '.join(invalid_types)}"
+        )
     installer_metadata = data
     return installer_metadata
 
@@ -201,7 +221,10 @@ def get_metadata() -> dict:
         raise ValueError(f"{metadata_path} 的 items 不能为空")
 
     item_ids = [item.get("id") for item in data["items"] if isinstance(item, dict)]
-    if len(item_ids) != len(data["items"]) or any(not item_id for item_id in item_ids):
+    if len(item_ids) != len(data["items"]) or any(
+        not isinstance(item_id, str) or not item_id.strip()
+        for item_id in item_ids
+    ):
         raise ValueError(f"{metadata_path} 中每个组件都必须是带 id 的对象")
     if len(item_ids) != len(set(item_ids)):
         raise ValueError(f"{metadata_path} 中存在重复组件 id")
@@ -213,6 +236,36 @@ def get_metadata() -> dict:
     )
     for item in data["items"]:
         component_id = item["id"]
+        expected_item_types = {
+            "name": str,
+            "required": bool,
+            "checked": bool,
+            "dependencies": list,
+        }
+        invalid_fields = [
+            key
+            for key, expected_type in expected_item_types.items()
+            if key not in item or type(item[key]) is not expected_type
+        ]
+        if invalid_fields:
+            raise ValueError(
+                f"组件 {component_id} 缺少字段或字段类型错误: "
+                f"{', '.join(invalid_fields)}"
+            )
+        if any(
+            not isinstance(dependency_id, str)
+            for dependency_id in item["dependencies"]
+        ):
+            raise ValueError(f"组件 {component_id} 的 dependencies 只能包含字符串")
+        for key in file_keys:
+            files = item.get(key)
+            if files is not None and (
+                not isinstance(files, list)
+                or any(not isinstance(file_name, str) for file_name in files)
+            ):
+                raise ValueError(f"组件 {component_id} 的 {key} 必须是字符串数组或 null")
+        if item.get("actions") is not None and not isinstance(item["actions"], dict):
+            raise ValueError(f"组件 {component_id} 的 actions 必须是对象或 null")
         missing_dependencies = set(item.get("dependencies", [])) - known_ids
         if missing_dependencies:
             raise ValueError(
@@ -235,16 +288,30 @@ def get_metadata() -> dict:
                 f"{', '.join(sorted(missing_actions))}"
             )
 
+    dependency_graph = {
+        item["id"]: item.get("dependencies", []) for item in data["items"]
+    }
+    visiting = set()
+    visited = set()
+
+    def visit(component_id):
+        if component_id in visiting:
+            raise ValueError(f"组件依赖存在循环: {component_id}")
+        if component_id in visited:
+            return
+        visiting.add(component_id)
+        for dependency_id in dependency_graph[component_id]:
+            visit(dependency_id)
+        visiting.remove(component_id)
+        visited.add(component_id)
+
+    for component_id in dependency_graph:
+        visit(component_id)
+
     if not 0 <= MAIN_ITEM < len(data["items"]):
         raise ValueError(f"main_item={MAIN_ITEM} 超出 items 范围")
     metadata = data
     return metadata
-
-THEME_MODES = {
-    "system": "跟随系统",
-    "light": "浅色",
-    "dark": "深色",
-}
 
 THEME_COLORS = {
     "light": {
@@ -424,6 +491,34 @@ def apply_application_theme(theme: str) -> None:
     app.setStyleSheet(create_theme_stylesheet(theme))
 
 
+def get_application_icon() -> QIcon:
+    """Load the configured icon from the application directory."""
+    icon_path = APPLICATION_DIR / Path(INSTALLER_METADATA["icon"].replace("\\", "/"))
+    icon = QIcon(str(icon_path))
+    if icon.isNull():
+        print(f"[WARN] 无法加载应用图标: {icon_path}")
+    return icon
+
+
+def configure_windows_app_id() -> None:
+    """Give the packaged app its own Windows taskbar identity."""
+    if platform.system().lower() != "windows":
+        return
+    app_id = ".".join(
+        part.strip().replace(" ", "_")
+        for part in (
+            INSTALLER_METADATA["author"],
+            INSTALLER_METADATA["registry_key_name"],
+            PROGRAM_NAME,
+        )
+        if part.strip()
+    )
+    try:
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+    except (AttributeError, OSError) as error:
+        print(f"[WARN] 无法设置 Windows AppUserModelID: {error}")
+
+
 def format_size(size: int) -> str:
     """Format a byte count using binary units."""
     value = float(max(size, 0))
@@ -518,6 +613,38 @@ class InstallThread(QThread):
         }
         self.success = False
         print(f"[DEBUG] InstallThread初始化: path={path}, components={components}")
+
+    def _resolve_install_order(self):
+        """Topologically order selected components and include dependencies."""
+        selected = {
+            component_id
+            for component_id, enabled in self.components.items()
+            if enabled
+        }
+        order = []
+        visiting = set()
+        visited = set()
+
+        def visit(component_id):
+            if component_id in visiting:
+                raise ValueError(f"组件依赖存在循环: {component_id}")
+            if component_id in visited:
+                return
+            item = self.items_by_id.get(component_id)
+            if item is None:
+                raise KeyError(f"组件不存在: {component_id}")
+            visiting.add(component_id)
+            for dependency_id in item.get("dependencies", []):
+                selected.add(dependency_id)
+                visit(dependency_id)
+            visiting.remove(component_id)
+            visited.add(component_id)
+            order.append(component_id)
+
+        for component_id in self.items_by_id:
+            if component_id in selected:
+                visit(component_id)
+        return order
 
     @staticmethod
     def _get_platform_files_key():
@@ -696,11 +823,7 @@ class InstallThread(QThread):
             print("[DEBUG] 准备工作完成，开始安装组件")
             
             # 2. 安装组件
-            selected_components = [
-                component
-                for component, selected in self.components.items()
-                if selected
-            ]
+            selected_components = self._resolve_install_order()
             total_components = len(selected_components)
             print(f"[DEBUG] 需要安装的组件数: {total_components}")
 
@@ -726,7 +849,6 @@ class InstallThread(QThread):
             
         except Exception as e:
             print(f"[ERROR] 安装过程中发生异常: {e}")
-            import traceback
             traceback.print_exc()
             self.progress_updated.emit(0, f"安装失败: {str(e)}")
         finally:
@@ -1727,6 +1849,7 @@ class InstallPage(QWidget):
         if success:
             self.parent.go_to_page("finish")
         else:
+            self.next_button.setText("查看结果(F)")
             self.next_button.setEnabled(True)
 
     def on_next(self):
@@ -1766,9 +1889,11 @@ class FinishPage(BasePage):
 
     def set_result(self, success):
         if success:
+            self.subtitle_label.setText("安装完成!")
             self.result_label.setText(get_installer_metadata()["short_name"]+" 已经成功安装到本机。")
             self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #4BA348;")
         else:
+            self.subtitle_label.setText("安装失败")
             self.result_label.setText("安装失败，请检查错误信息后重试。")
             self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #FF0000;")
 
@@ -1786,16 +1911,9 @@ class InstallerWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(PROGRAM_NAME)
-        self.setWindowIcon(QIcon(os.path.join(os.getcwd(), "pack", "icon.ico")))
-
-        self.theme_settings = QSettings("Baymaxawa", "UniversalInstaller")
-        saved_theme = self.theme_settings.value("appearance/theme", "system")
-        self.theme_mode = saved_theme if saved_theme in THEME_MODES else "system"
-        self.setup_theme_menu()
-        self.apply_theme_mode()
-        self.setFixedSize(
-            WINDOW_SIZE[0], WINDOW_SIZE[1] + self.menuBar().sizeHint().height()
-        )
+        self.setWindowIcon(get_application_icon())
+        apply_application_theme(get_system_theme())
+        self.setFixedSize(*WINDOW_SIZE)
 
         style_hints = QApplication.styleHints()
         if hasattr(style_hints, "colorSchemeChanged"):
@@ -1848,41 +1966,8 @@ class InstallerWindow(QMainWindow):
         # 设置当前页面
         self.go_to_page("welcome")
 
-    def setup_theme_menu(self):
-        """Create an exclusive System/Light/Dark appearance menu."""
-        theme_menu = self.menuBar().addMenu("外观(&V)")
-        self.theme_action_group = QActionGroup(self)
-        self.theme_action_group.setExclusive(True)
-        self.theme_actions = {}
-
-        for mode, label in THEME_MODES.items():
-            action = QAction(label, self, checkable=True)
-            action.setData(mode)
-            action.setChecked(mode == self.theme_mode)
-            action.triggered.connect(
-                lambda checked=False, selected_mode=mode: self.set_theme_mode(
-                    selected_mode
-                )
-            )
-            self.theme_action_group.addAction(action)
-            theme_menu.addAction(action)
-            self.theme_actions[mode] = action
-
-    def set_theme_mode(self, mode):
-        if mode not in THEME_MODES:
-            raise ValueError(f"未知主题模式: {mode}")
-        self.theme_mode = mode
-        self.theme_settings.setValue("appearance/theme", mode)
-        self.theme_actions[mode].setChecked(True)
-        self.apply_theme_mode()
-
-    def apply_theme_mode(self):
-        active_theme = get_system_theme() if self.theme_mode == "system" else self.theme_mode
-        apply_application_theme(active_theme)
-
     def on_system_theme_changed(self, _color_scheme):
-        if self.theme_mode == "system":
-            self.apply_theme_mode()
+        apply_application_theme(get_system_theme())
 
     def go_to_page(self, page_name):
         self.page_shown.emit(page_name)
@@ -1905,9 +1990,28 @@ class InstallerWindow(QMainWindow):
         if reply == QMessageBox.Yes:
             self.close()
 
+    def closeEvent(self, event):
+        install_page = getattr(self, "pages", {}).get("install")
+        install_thread = getattr(install_page, "thread", None)
+        if install_thread is not None and install_thread.isRunning():
+            QMessageBox.warning(
+                self,
+                "安装进行中",
+                "文件仍在安装中，请等待安装完成后再关闭程序。",
+            )
+            event.ignore()
+            return
+        super().closeEvent(event)
+
 
 def main():
+    configure_windows_app_id()
     app = QApplication(sys.argv)
+    app.setApplicationName(PROGRAM_NAME)
+    app.setApplicationDisplayName(PROGRAM_NAME)
+    app.setApplicationVersion(VERSION)
+    app.setOrganizationName(INSTALLER_METADATA["author"])
+    app.setWindowIcon(get_application_icon())
     app.setStyle("Fusion")
 
     # 设置应用程序字体
