@@ -274,22 +274,46 @@ class InstallThread(QThread):
             print(f"[DEBUG] 非Windows系统，添加前缀: {in_path}")
         
         # 获取文件类型
-        result = file.split(".")
-        file_type = self._get_file_type(result[1] if len(result) > 1 else "")
+        file_type = self._get_file_type(file)
         print(f"[DEBUG] 文件类型: {file_type}")
         
         return in_path, file_type
 
-    def _get_file_type(self, extension):
-        """根据扩展名返回文件类型"""
-        type_map = {
-            'zip': 'zip',
-            'rar': 'rar',
-            '7z': '7z',
-            'tar': 'tar.gz',
-            'txt': 'txt'
+    @staticmethod
+    def _get_file_type(filename):
+        """根据完整文件名返回受支持的文件类型。"""
+        filename = filename.lower()
+        suffix_map = {
+            '.tar.gz': 'tar.gz',
+            '.tgz': 'tar.gz',
+            '.zip': 'zip',
+            '.rar': 'rar',
+            '.7z': '7z',
+            '.tar': 'tar',
+            '.txt': 'txt',
         }
-        return type_map.get(extension, None)
+        for suffix, file_type in suffix_map.items():
+            if filename.endswith(suffix):
+                return file_type
+        return None
+
+    @staticmethod
+    def _extract_archive(archive_name, archive_type, in_path):
+        """解压文件并确保压缩包句柄及时关闭。"""
+        if archive_type == 'zip':
+            with zipfile.ZipFile(archive_name, "r") as archive:
+                archive.extractall(in_path)
+        elif archive_type == 'rar':
+            with rarfile.RarFile(archive_name, "r") as archive:
+                archive.extractall(in_path)
+        elif archive_type == '7z':
+            with py7zr.SevenZipFile(archive_name, "r") as archive:
+                archive.extractall(in_path)
+        elif archive_type in {'tar', 'tar.gz'}:
+            with tarfile.open(archive_name, "r:*") as archive:
+                archive.extractall(in_path)
+        else:
+            raise ValueError(f"未知的压缩类型: {archive_type}")
 
     def _handle_file(self, file, item, is_platform_file=False):
         """统一处理单个文件"""
@@ -436,22 +460,9 @@ class InstallThread(QThread):
         try:
             print(f"[DEBUG] 开始解压，类型: {archive_type}")
             
-            # 解压器映射
-            extractors = {
-                'zip': lambda f, p: zipfile.ZipFile(f, "r").extractall(p),
-                'rar': lambda f, p: rarfile.RarFile(f, "r").extractall(p),
-                '7z': lambda f, p: py7zr.SevenZipFile(f, "r").extractall(p),
-                'tar.gz': lambda f, p: tarfile.TarFile(f, "r").extractall(p),
-                'tar': lambda f, p: tarfile.TarFile(f, "r").extractall(p)
-            }
-            
-            if archive_type in extractors:
-                print(f"[DEBUG] 使用解压器: {archive_type}")
-                extractors[archive_type](archive_name, in_path)
-                print(f"[DEBUG] 解压完成: {archive_name}")
-            else:
-                print(f"[DEBUG] 未知的压缩类型: {archive_type}, 跳过")
-                return
+            print(f"[DEBUG] 使用解压器: {archive_type}")
+            self._extract_archive(archive_name, archive_type, in_path)
+            print(f"[DEBUG] 解压完成: {archive_name}")
             
             print(f"[DEBUG] 解压成功: {archive_name} -> {in_path}")
             self.progress_updated.emit(0, f"解压成功: {archive_name}")
