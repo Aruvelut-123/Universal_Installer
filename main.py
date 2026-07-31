@@ -2,6 +2,7 @@ import atexit
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 import shutil
@@ -569,6 +570,182 @@ def get_default_install_path(item: dict) -> str:
         "darwin": "default_path_macos",
     }.get(platform.system().lower())
     return item.get(key, "") if key else ""
+
+
+COMPAT_INSTALL_PATH_ENV_VARS = (
+    "STEAM_COMPAT_INSTALL_PATH",
+    "GAMEHUB_GAME_PATH",
+    "WINLATOR_GAME_PATH",
+)
+COMPAT_PREFIX_ENV_VARS = (
+    "WINEPREFIX",
+    "STEAM_COMPAT_DATA_PATH",
+    "PROTON_PREFIX",
+)
+
+
+def unique_paths(paths) -> list[Path]:
+    """Deduplicate paths without requiring them to exist."""
+    result = []
+    seen = set()
+    for path in paths:
+        path = Path(path)
+        key = os.path.normcase(os.path.normpath(str(path)))
+        if key not in seen:
+            seen.add(key)
+            result.append(path)
+    return result
+
+
+def runtime_path_candidates(raw_path, system=None) -> list[Path]:
+    """Translate host paths exposed by Proton/Wine into accessible paths."""
+    if not raw_path:
+        return []
+    system = (system or platform.system()).lower()
+    expanded = os.path.expandvars(os.path.expanduser(str(raw_path).strip().strip('"')))
+    if system == "windows" and expanded.startswith("/"):
+        # Wine, Proton, Winlator and GameHub usually expose the host root as Z:.
+        candidates = [
+            Path("Z:" + expanded.replace("/", "\\")),
+            Path(expanded),
+        ]
+    else:
+        candidates = [Path(expanded)]
+    return unique_paths(candidates)
+
+
+def get_windows_drive_roots() -> list[Path]:
+    """Return mounted Windows drives, including Wine/Android mapped drives."""
+    if platform.system().lower() != "windows":
+        return []
+    if hasattr(os, "listdrives"):
+        drive_names = os.listdrives()
+    else:
+        drive_names = [f"{letter}:\\" for letter in "CDEFGHIJKLMNOPQRSTUVWXYZ"]
+    return [
+        Path(drive)
+        for drive in drive_names
+        if drive and drive[0].upper() not in {"A", "B"} and Path(drive).is_dir()
+    ]
+
+
+def steam_library_paths(steam_roots, system=None) -> list[Path]:
+    """Read every Steam library, retaining the primary library as a fallback."""
+    import vdf
+
+    libraries = []
+    for steam_root in unique_paths(steam_roots):
+        if steam_root.is_dir():
+            libraries.append(steam_root)
+        library_file = steam_root / "steamapps" / "libraryfolders.vdf"
+        if not library_file.is_file():
+            continue
+        try:
+            with library_file.open("r", encoding="utf-8", errors="ignore") as file:
+                data = vdf.load(file)
+        except (OSError, ValueError, SyntaxError) as error:
+            print(f"读取 Steam 库配置失败 {library_file}: {error}")
+            continue
+        entries = data.get("libraryfolders", {})
+        if not isinstance(entries, dict):
+            continue
+        for key, value in entries.items():
+            if not str(key).isdigit() or not isinstance(value, dict):
+                continue
+            for path in runtime_path_candidates(value.get("path"), system):
+                if path.is_dir():
+                    libraries.append(path)
+    return unique_paths(libraries)
+
+
+def expected_game_executables(installer_data: dict) -> tuple[str, ...]:
+    """Get optional executable hints, falling back to the directory prompt."""
+    configured = installer_data.get("game_executables")
+    if configured is None:
+        configured = installer_data.get("game_executable")
+    if isinstance(configured, str):
+        names = [configured]
+    elif isinstance(configured, list):
+        names = [name for name in configured if isinstance(name, str)]
+    else:
+        names = []
+    title = installer_data.get("select_directory_title", "")
+    names.extend(re.findall(r"[A-Za-z0-9_.+-]+\.exe\b", title, flags=re.IGNORECASE))
+    return tuple(dict.fromkeys(Path(name).name for name in names if name.strip()))
+
+
+def game_path_candidates(root: Path, game_name: str) -> list[Path]:
+    """Return bounded common layouts used by Steam and Android containers."""
+    return [
+        root / game_name,
+        root / "Games" / game_name,
+        root / "games" / game_name,
+        root / "Winlator" / "Games" / game_name,
+        root / "GameHub" / "Games" / game_name,
+        root / "steamapps" / "common" / game_name,
+        root / "SteamLibrary" / "steamapps" / "common" / game_name,
+        root / "Program Files (x86)" / "Steam" / "steamapps" / "common" / game_name,
+        root / "Program Files" / "Steam" / "steamapps" / "common" / game_name,
+    ]
+
+
+def root_contains_game(root: Path, executable_names) -> bool:
+    """Recognize a container drive that maps directly to the game directory."""
+    if not root.is_dir():
+        return False
+    return any((root / executable).is_file() for executable in executable_names)
+
+
+def find_game_under_roots(roots, game_name: str, executable_names=()) -> Path | None:
+    """Search only known shallow layouts; never recursively walk whole drives."""
+    for root in unique_paths(roots):
+        if root_contains_game(root, executable_names):
+            return root
+        for candidate in game_path_candidates(root, game_name):
+            if candidate.is_dir():
+                return candidate
+    return None
+
+
+def compatibility_prefixes(steam_libraries, game_id, environment=None) -> list[Path]:
+    """Collect Wine and Proton prefixes relevant to the configured game."""
+    if environment is None:
+        environment = os.environ
+    prefixes = []
+    for variable in COMPAT_PREFIX_ENV_VARS:
+        for path in runtime_path_candidates(environment.get(variable)):
+            prefixes.extend((path, path / "pfx"))
+    if platform.system().lower() != "windows":
+        prefixes.append(Path.home() / ".wine")
+    if game_id:
+        for library in steam_libraries:
+            prefixes.append(
+                library / "steamapps" / "compatdata" / str(game_id) / "pfx"
+            )
+    return unique_paths(path for path in prefixes if path.is_dir())
+
+
+def prefix_drive_roots(prefixes) -> list[Path]:
+    """Expose C: and custom dosdevices mappings from Wine/Proton prefixes."""
+    roots = []
+    for prefix in unique_paths(prefixes):
+        for candidate in (prefix, prefix / "drive_c", prefix / "pfx" / "drive_c"):
+            if candidate.name.lower() == "drive_c" and candidate.is_dir():
+                roots.append(candidate)
+        for dosdevices in (prefix / "dosdevices", prefix / "pfx" / "dosdevices"):
+            if not dosdevices.is_dir():
+                continue
+            try:
+                mappings = list(dosdevices.iterdir())
+            except OSError:
+                continue
+            for mapping in mappings:
+                if re.fullmatch(r"[a-zA-Z]:", mapping.name) and mapping.is_dir():
+                    try:
+                        roots.append(mapping.resolve())
+                    except OSError:
+                        roots.append(mapping)
+    return unique_paths(roots)
 
 
 def relaunch_as_admin() -> None:
@@ -1581,58 +1758,79 @@ class DirectoryPage(BasePage):
                 self.path_input.setText(directory)
 
     def update_directory(self):
-        path = self.detect_steam_path()
+        path = self.detect_game_path()
         if path is not None:
             self.path_input.setText(path)
             self.update_disk_space()
 
     def detect_steam_path(self):
+        """Backward-compatible alias for callers using the old method name."""
+        return self.detect_game_path()
+
+    def detect_game_path(self):
         game_name = INSTALLER_METADATA.get("game_name", "").strip()
         if not game_name:
             print("game name not contains in installer metadata, returning default path")
             return self.default_path
-        steam_path = self.get_steam_path()
-        if steam_path is None:
-            print("steam not installed, return default path")
+        if "/" in game_name or "\\" in game_name:
+            print(f"拒绝包含路径分隔符的 game_name: {game_name}")
             return self.default_path
-        library_folders = os.path.join(steam_path, "steamapps", "libraryfolders.vdf")
-        print("library folders file path: "+library_folders)
-        if os.path.exists(library_folders):
-            import vdf
-            try:
-                with open(library_folders, "r", encoding="utf-8", errors="ignore") as file:
-                    libraries = vdf.load(file)
-            except (OSError, ValueError) as error:
-                print(f"读取 Steam 库配置失败: {error}")
-                return self.default_path
 
-            game_id = str(INSTALLER_METADATA.get("game_id", ""))
-            for key, value in libraries.get("libraryfolders", {}).items():
-                if not key.isdigit() or not isinstance(value, dict):
-                    continue
-                library_path = value.get("path")
-                if not library_path:
-                    continue
-                apps = value.get("apps", {})
-                if game_id and apps and game_id not in apps:
-                    continue
-                game_path = os.path.join(
-                    library_path, "steamapps", "common", game_name
-                )
-                if os.path.isdir(game_path):
-                    print(f"Find game folder at: {game_path}")
-                    return game_path
-            print("Failed to find game folder, returning default path")
-            return self.default_path
+        executable_names = expected_game_executables(INSTALLER_METADATA)
+        environment = os.environ
+
+        # Proton provides the exact install path; custom container wrappers may
+        # expose equivalent variables. Prefer these over all heuristic scans.
+        for variable in COMPAT_INSTALL_PATH_ENV_VARS:
+            for candidate in runtime_path_candidates(environment.get(variable)):
+                if candidate.is_dir():
+                    print(f"找到游戏目录 ({variable}): {candidate}")
+                    return str(candidate)
+
+        steam_roots = self.get_steam_paths()
+        libraries = steam_library_paths(steam_roots)
+        steam_game = find_game_under_roots(libraries, game_name)
+        if steam_game is not None:
+            print(f"找到游戏目录 (Steam/Proton): {steam_game}")
+            return str(steam_game)
+
+        prefixes = compatibility_prefixes(
+            libraries,
+            INSTALLER_METADATA.get("game_id"),
+            environment,
+        )
+        prefix_game = find_game_under_roots(
+            prefix_drive_roots(prefixes), game_name, executable_names
+        )
+        if prefix_game is not None:
+            print(f"找到游戏目录 (Wine/Proton prefix): {prefix_game}")
+            return str(prefix_game)
+
+        # A Windows build running in Winlator or GameSir GameHub sees Android
+        # storage through Wine drive mappings (commonly D:, E:, X: or Z:).
+        mapped_game = find_game_under_roots(
+            get_windows_drive_roots(), game_name, executable_names
+        )
+        if mapped_game is not None:
+            print(f"找到游戏目录 (Winlator/GameHub mapped drive): {mapped_game}")
+            return str(mapped_game)
+
+        if self.default_path and Path(self.default_path).is_dir():
+            print(f"使用已存在的默认目录: {self.default_path}")
         else:
-            print("library folders file not exists, returning default path")
-            return self.default_path
+            print("未找到 Steam/Wine/Proton/Winlator/GameHub 游戏目录")
+        return self.default_path
 
-    def get_steam_path(self):
-        arch = platform.machine().lower()
+    def get_steam_paths(self):
+        """Return every accessible Steam root for native and compatibility environments."""
         os_name = platform.system().lower()
+        paths = runtime_path_candidates(
+            os.environ.get("STEAM_COMPAT_CLIENT_INSTALL_PATH"), os_name
+        )
+
         if os_name == "windows":
             import winreg
+
             registry_locations = [
                 (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Valve\Steam", ("SteamPath", "InstallPath"), 0),
                 (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Valve\Steam", ("InstallPath",), winreg.KEY_WOW64_64KEY),
@@ -1646,45 +1844,51 @@ class DirectoryPage(BasePage):
                         for value_name in value_names:
                             try:
                                 path, _ = winreg.QueryValueEx(key, value_name)
-                                if path:
-                                    return os.path.normpath(path)
                             except OSError:
                                 continue
+                            paths.extend(runtime_path_candidates(path, os_name))
                 except OSError:
                     continue
-            print(f"未在注册表中找到 Steam，architecture={arch}")
-            return None
+            for drive in get_windows_drive_roots():
+                paths.extend(
+                    (
+                        drive / "Steam",
+                        drive / "SteamLibrary",
+                        drive / "Program Files (x86)" / "Steam",
+                        drive / "Program Files" / "Steam",
+                    )
+                )
         elif os_name == "linux":
-            possible_paths = [
-                os.path.expanduser("~/.steam/root"), # 最佳：一个指向真实安装目录的符号链接
-                os.path.expanduser("~/.local/share/Steam"), # 官方 .deb 包及多数情况下的默认路径
-                os.path.expanduser("~/.steam/debian-installation") # Debian 系发行版的特定路径
-            ]
-            for path in possible_paths:
-                if os.path.exists(path):
-                    # 如果找到的路径是一个符号链接，我们可以选择跟随它找到真实目录
-                    if os.path.islink(path):
-                        real_path = os.path.realpath(path)
-                        print(f"找到 Steam 安装目录 (通过符号链接): {real_path}")
-                        return real_path
-                    else:
-                        print(f"找到 Steam 安装目录: {path}")
-                        return path
-            print("Steam文件夹不存在!")
-            return None
+            paths.extend(
+                (
+                    Path.home() / ".steam/root",
+                    Path.home() / ".local/share/Steam",
+                    Path.home() / ".steam/debian-installation",
+                    Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/Steam",
+                    Path.home() / "snap/steam/common/.local/share/Steam",
+                )
+            )
         elif os_name == "darwin":
-            possible_paths = [
-                os.path.expanduser("~/Library/Application Support/Steam")
-            ]
-            for path in possible_paths:
-                if os.path.exists(path):
-                    print(f"找到 Steam 目录: {path}")
-                    return path
-            
-            print("未找到 Steam 安装目录!")
-            return None
-        else:
-            raise NotImplementedError("Not support other operating system for now.")
+            paths.append(Path.home() / "Library/Application Support/Steam")
+
+        existing_paths = []
+        for path in unique_paths(paths):
+            if not path.is_dir():
+                continue
+            try:
+                path = path.resolve()
+            except OSError:
+                pass
+            existing_paths.append(path)
+            print(f"找到 Steam 根目录: {path}")
+        if not existing_paths:
+            print("未找到可访问的 Steam 根目录")
+        return unique_paths(existing_paths)
+
+    def get_steam_path(self):
+        """Return the first Steam root for backward compatibility."""
+        paths = self.get_steam_paths()
+        return str(paths[0]) if paths else None
 
     def page_shown(self, name:str):
         if name == "directory":
