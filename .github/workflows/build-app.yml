@@ -54,7 +54,7 @@ jobs:
         run: |
           python -m nuitka --onefile --windows-disable-console --include-module=vdf --windows-icon-from-ico=pack/icon.ico --enable-plugin=pyside6 --assume-yes-for-downloads main.py
       - name: Upload binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installer-windows
           path: ./main.exe
@@ -102,7 +102,7 @@ jobs:
           # 验证二进制格式；不启动 GUI，避免无显示环境时等待。
           file main.bin
       - name: Upload Binary
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installer-linux-binary
           path: ./main.bin
@@ -179,7 +179,7 @@ jobs:
           chmod +x appimagetool-x86_64.AppImage
           ARCH=x86_64 ./appimagetool-x86_64.AppImage -v AppDir main.AppImage
       - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installer-linux-AppImage
           path: ./main.AppImage
@@ -274,7 +274,7 @@ jobs:
           ditto -c -k --keepParent main.app macos.zip
       
       - name: Upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: installer-macos-universal-compatible
           path: ./macos.zip
