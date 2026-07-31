@@ -6,6 +6,17 @@ inputs:
     description: Python version passed to actions/setup-python.
     required: true
 
+outputs:
+  cache-dir:
+    description: Concrete pip cache directory.
+    value: ${{ steps.pip-cache.outputs.dir }}
+  cache-key:
+    description: Exact cache key for an immediate save step.
+    value: ${{ steps.cache-key.outputs.value }}
+  cache-hit:
+    description: Whether the exact key was restored.
+    value: ${{ steps.restore-cache.outputs.cache-hit }}
+
 runs:
   using: composite
   steps:
@@ -22,10 +33,18 @@ runs:
         mkdir -p "$cache_dir"
         echo "dir=$cache_dir" >> "$GITHUB_OUTPUT"
 
+    - name: Build pip cache key
+      id: cache-key
+      shell: bash
+      env:
+        CACHE_KEY: pip-${{ runner.os }}-${{ runner.arch }}-py${{ inputs.python-version }}-${{ hashFiles('requirements.txt') }}
+      run: echo "value=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+
     - name: Restore pip cache
-      uses: actions/cache@v6
+      id: restore-cache
+      uses: actions/cache/restore@v6
       with:
         path: ${{ steps.pip-cache.outputs.dir }}
-        key: pip-${{ runner.os }}-${{ runner.arch }}-py${{ inputs.python-version }}-${{ hashFiles('requirements.txt') }}
+        key: ${{ steps.cache-key.outputs.value }}
         restore-keys: |
           pip-${{ runner.os }}-${{ runner.arch }}-py${{ inputs.python-version }}-
