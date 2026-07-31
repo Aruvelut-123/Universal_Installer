@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import atexit
 import json
 import os
@@ -14,15 +16,28 @@ import zipfile
 import rarfile
 import py7zr
 import tarfile
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 import traceback
-from typing import Any, override
+from typing import Any
+
+try:
+    from typing import override
+except ImportError:
+    def override(method):
+        """Python 3.8-compatible no-op replacement for typing.override."""
+        return method
+
+
+def is_frozen_application() -> bool:
+    """Return whether the process is running from a frozen executable."""
+    return bool(getattr(sys, "frozen", False) or "__compiled__" in globals())
 
 
 def resolve_application_directory() -> Path:
     """Locate external assets beside the source file or compiled executable."""
-    launch_file = sys.argv[0] if "__compiled__" in globals() else __file__
+    launch_file = sys.executable if is_frozen_application() else __file__
     directory = Path(launch_file).resolve().parent
     for parent in (directory, *directory.parents):
         if parent.suffix.lower() == ".app":
@@ -134,14 +149,28 @@ print(f"Process ID: {os.getpid()}")
 print("=" * 80)
 print("Found app directory: ", APPLICATION_DIR)
 
-from PySide6.QtWidgets import (
-    QApplication, QMainWindow, QWidget, QStackedWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QTextEdit, QCheckBox, QLineEdit, QFileDialog,
-    QProgressBar, QGroupBox, QFrame, QMessageBox, QTreeWidget,
-    QTreeWidgetItem
-)
-from PySide6.QtGui import QColor, QFont, QIcon, QPalette, QPixmap
-from PySide6.QtCore import QSignalBlocker, Qt, QThread, Signal
+try:
+    from PySide6.QtWidgets import (
+        QAbstractItemView, QApplication, QMainWindow, QWidget, QStackedWidget,
+        QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QCheckBox,
+        QLineEdit, QFileDialog, QProgressBar, QGroupBox, QFrame, QMessageBox,
+        QTreeWidget, QTreeWidgetItem,
+    )
+    from PySide6.QtGui import QColor, QFont, QIcon, QPalette, QPixmap
+    from PySide6.QtCore import Qt, QThread, Signal
+    QT_BINDING = "PySide6"
+except ImportError:
+    from PySide2.QtWidgets import (
+        QAbstractItemView, QApplication, QMainWindow, QWidget, QStackedWidget,
+        QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QCheckBox,
+        QLineEdit, QFileDialog, QProgressBar, QGroupBox, QFrame, QMessageBox,
+        QTreeWidget, QTreeWidgetItem,
+    )
+    from PySide2.QtGui import QColor, QFont, QIcon, QPalette, QPixmap
+    from PySide2.QtCore import Qt, QThread, Signal
+    QT_BINDING = "PySide2"
+
+print(f"Qt binding: {QT_BINDING}")
 installer_metadata: dict[str, Any] | None = None
 
 REQUIRED_INSTALLER_METADATA = {
@@ -356,11 +385,15 @@ def get_system_theme() -> str:
     """Return the OS application theme, with a Windows registry fallback."""
     app = QApplication.instance()
     if app is not None:
-        scheme = app.styleHints().colorScheme()
-        if scheme == Qt.ColorScheme.Dark:
-            return "dark"
-        if scheme == Qt.ColorScheme.Light:
-            return "light"
+        style_hints = app.styleHints()
+        if hasattr(style_hints, "colorScheme"):
+            scheme = style_hints.colorScheme()
+            color_scheme = getattr(Qt, "ColorScheme", None)
+            if color_scheme is not None:
+                if scheme == color_scheme.Dark:
+                    return "dark"
+                if scheme == color_scheme.Light:
+                    return "light"
 
     if platform.system().lower() == "windows":
         try:
@@ -379,31 +412,31 @@ def create_theme_palette(theme: str) -> QPalette:
     colors = THEME_COLORS[theme]
     palette = QPalette()
     roles = {
-        QPalette.ColorRole.Window: "window",
-        QPalette.ColorRole.WindowText: "text",
-        QPalette.ColorRole.Base: "base",
-        QPalette.ColorRole.AlternateBase: "alternate",
-        QPalette.ColorRole.ToolTipBase: "base",
-        QPalette.ColorRole.ToolTipText: "text",
-        QPalette.ColorRole.Text: "text",
-        QPalette.ColorRole.Button: "button",
-        QPalette.ColorRole.ButtonText: "text",
-        QPalette.ColorRole.BrightText: "highlight_text",
-        QPalette.ColorRole.Link: "highlight",
-        QPalette.ColorRole.Highlight: "highlight",
-        QPalette.ColorRole.HighlightedText: "highlight_text",
-        QPalette.ColorRole.PlaceholderText: "muted",
+        QPalette.Window: "window",
+        QPalette.WindowText: "text",
+        QPalette.Base: "base",
+        QPalette.AlternateBase: "alternate",
+        QPalette.ToolTipBase: "base",
+        QPalette.ToolTipText: "text",
+        QPalette.Text: "text",
+        QPalette.Button: "button",
+        QPalette.ButtonText: "text",
+        QPalette.BrightText: "highlight_text",
+        QPalette.Link: "highlight",
+        QPalette.Highlight: "highlight",
+        QPalette.HighlightedText: "highlight_text",
+        QPalette.PlaceholderText: "muted",
     }
     for role, color_name in roles.items():
         palette.setColor(role, QColor(colors[color_name]))
     palette.setColor(
-        QPalette.ColorGroup.Disabled,
-        QPalette.ColorRole.Text,
+        QPalette.Disabled,
+        QPalette.Text,
         QColor(colors["disabled"]),
     )
     palette.setColor(
-        QPalette.ColorGroup.Disabled,
-        QPalette.ColorRole.ButtonText,
+        QPalette.Disabled,
+        QPalette.ButtonText,
         QColor(colors["disabled"]),
     )
     return palette
@@ -501,6 +534,16 @@ def get_application_icon() -> QIcon:
     return icon
 
 
+@contextmanager
+def blocked_signals(widget):
+    """Block widget signals temporarily on both Qt 5 and Qt 6."""
+    previous_state = widget.blockSignals(True)
+    try:
+        yield
+    finally:
+        widget.blockSignals(previous_state)
+
+
 def configure_windows_app_id() -> None:
     """Give the packaged app its own Windows taskbar identity."""
     if platform.system().lower() != "windows":
@@ -529,10 +572,26 @@ def format_size(size: int) -> str:
         value /= 1024
 
 
-def get_platform_file_candidates(system=None, machine=None) -> tuple[str, ...]:
+def get_windows_native_machine(environment=None) -> str:
+    """Return the native Windows architecture, including under WOW64."""
+    environment = os.environ if environment is None else environment
+    return (
+        environment.get("PROCESSOR_ARCHITEW6432")
+        or environment.get("PROCESSOR_ARCHITECTURE")
+        or platform.machine()
+    ).lower()
+
+
+def get_platform_file_candidates(
+    system=None, machine=None, environment=None
+) -> tuple[str, ...]:
     """Return platform file keys in preferred-to-compatible order."""
     system = (system or platform.system()).lower()
-    machine = (machine or platform.machine()).lower()
+    if machine is None and system == "windows":
+        machine = get_windows_native_machine(environment)
+    else:
+        machine = machine or platform.machine()
+    machine = machine.lower()
     architecture = {
         "amd64": "x64", "x86_64": "x64", "x64": "x64",
         "i386": "x86", "i686": "x86", "x86": "x86",
@@ -547,7 +606,7 @@ def get_platform_file_candidates(system=None, machine=None) -> tuple[str, ...]:
     compatibility = {
         "arm64": ("arm64", "x64", "x86"),
         "x64": ("x64", "x86"),
-        "x86": ("x86", "x64"),
+        "x86": ("x86",),
     }[architecture]
     return tuple(f"{prefix}{candidate}file" for candidate in compatibility)
 
@@ -753,7 +812,7 @@ def relaunch_as_admin() -> None:
     if platform.system().lower() != "windows":
         return
     arguments = list(sys.argv[1:])
-    if "__compiled__" not in globals():
+    if not is_frozen_application():
         arguments.insert(0, str(Path(__file__).resolve()))
     parameters = subprocess.list2cmdline(arguments)
     result = ctypes.windll.shell32.ShellExecuteW(
@@ -1099,14 +1158,14 @@ class BasePage(QWidget):
             self.left_frame = QFrame()
             self.left_frame.setFixedWidth(200)
             self.left_layout = QVBoxLayout(self.left_frame)
-            self.left_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.left_layout.setAlignment(Qt.AlignCenter)
 
             # 加载卡通图片
             self.character_label = QLabel()
             pixmap = QPixmap(get_installer_metadata()["left_pic"])
             if not pixmap.isNull():
-                self.character_label.setPixmap(pixmap.scaled(170, 340, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            self.character_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.character_label.setPixmap(pixmap.scaled(170, 340, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            self.character_label.setAlignment(Qt.AlignCenter)
             self.left_layout.addWidget(self.character_label)
 
         # 右侧区域 - 内容区域
@@ -1125,20 +1184,20 @@ class BasePage(QWidget):
             pixmap = QPixmap(get_installer_metadata()["header_pic"])
             if not pixmap.isNull():
                 self.header.setPixmap(
-                    pixmap.scaled(150, 57, Qt.AspectRatioMode.IgnoreAspectRatio, Qt.TransformationMode.SmoothTransformation))
-            self.header.setAlignment(Qt.AlignmentFlag.AlignLeft)
+                    pixmap.scaled(150, 57, Qt.IgnoreAspectRatio, Qt.SmoothTransformation))
+            self.header.setAlignment(Qt.AlignLeft)
 
         # 添加标题
         self.title_label = QLabel()
-        title_font = QFont("Microsoft YaHei UI", 12, QFont.Weight.Bold)
+        title_font = QFont("Microsoft YaHei UI", 12, QFont.Bold)
         self.title_label.setFont(title_font)
-        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.title_label.setAlignment(Qt.AlignCenter)
 
         # 副标题
         self.subtitle_label = QLabel()
         subtitle_font = QFont("Microsoft YaHei UI", 9)
         self.subtitle_label.setFont(subtitle_font)
-        self.subtitle_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.subtitle_label.setAlignment(Qt.AlignCenter)
         self.subtitle_label.setWordWrap(True)
 
         # 添加到布局
@@ -1165,7 +1224,7 @@ class BasePage(QWidget):
         footer_font = QFont("Microsoft YaHei UI", 8)
         self.footer_label.setFont(footer_font)
         self.footer_label.setProperty("muted", True)
-        self.footer_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.footer_label.setAlignment(Qt.AlignCenter)
 
         # 添加到布局
         self.right_layout.addLayout(self.button_layout)
@@ -1217,7 +1276,7 @@ class WelcomePage(BasePage):
 
         content_label = QLabel(content_text)
         content_label.setFont(QFont("Microsoft YaHei UI", 9))
-        content_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        content_label.setAlignment(Qt.AlignCenter)
         content_label.setWordWrap(True)
 
         self.content_layout.addStretch(1)
@@ -1311,7 +1370,7 @@ class PasswordPage(BasePage):
         password_form = QHBoxLayout()
         password_label = QLabel("密码:")
         self.password_input = QLineEdit()
-        self.password_input.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password_input.setEchoMode(QLineEdit.Password)
         self.password_input.setPlaceholderText("输入安装密码")
 
         password_form.addWidget(password_label)
@@ -1359,7 +1418,7 @@ class ComponentsPage(BasePage):
         tip_label.setStyleSheet("font-size: 9pt; margin-bottom: 10px;")
 
         self.components_list = QTreeWidget()
-        self.components_list.setSelectionMode(QTreeWidget.SelectionMode.MultiSelection)
+        self.components_list.setSelectionMode(QAbstractItemView.MultiSelection)
         self.components_list.setHeaderHidden(True)
         self.components_list.setColumnCount(1)
         self.components_list.setMouseTracking(True)  # 启用鼠标跟踪
@@ -1372,7 +1431,7 @@ class ComponentsPage(BasePage):
         # First create every node so parents may appear after their children in JSON.
         for item in items:
             tree_item = QTreeWidgetItem()
-            tree_item.setData(0, Qt.ItemDataRole.UserRole, item["id"])
+            tree_item.setData(0, Qt.UserRole, item["id"])
             self.tree_items_by_id[item["id"]] = tree_item
 
             missing_files = [
@@ -1386,39 +1445,39 @@ class ComponentsPage(BasePage):
             ]
             if item.get("required"):
                 label = f"{item['name']} (必选)"
-                tree_item.setCheckState(0, Qt.CheckState.Checked)
+                tree_item.setCheckState(0, Qt.Checked)
                 tree_item.setFlags(
-                    tree_item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable
+                    tree_item.flags() & ~Qt.ItemIsUserCheckable
                 )
             else:
                 label = item["name"]
                 tree_item.setFlags(
-                    tree_item.flags() | Qt.ItemFlag.ItemIsUserCheckable
+                    tree_item.flags() | Qt.ItemIsUserCheckable
                 )
                 initial_state = (
-                    Qt.CheckState.PartiallyChecked
+                    Qt.PartiallyChecked
                     if item.get("part_checked")
-                    else Qt.CheckState.Checked
+                    else Qt.Checked
                     if item.get("checked")
-                    else Qt.CheckState.Unchecked
+                    else Qt.Unchecked
                 )
                 tree_item.setCheckState(0, initial_state)
 
             if missing_files:
                 label = f"{item['name']} (未找到对应文件)"
                 tree_item.setFlags(
-                    tree_item.flags() & ~Qt.ItemFlag.ItemIsEnabled
+                    tree_item.flags() & ~Qt.ItemIsEnabled
                 )
                 if item.get("required"):
                     self.has_missing_required_files = True
                 else:
-                    tree_item.setCheckState(0, Qt.CheckState.Unchecked)
+                    tree_item.setCheckState(0, Qt.Unchecked)
                 print(
                     f"组件 {item['id']} 缺少文件: {', '.join(missing_files)}"
                 )
             if item.get("disabled"):
                 tree_item.setFlags(
-                    tree_item.flags() & ~Qt.ItemFlag.ItemIsEnabled
+                    tree_item.flags() & ~Qt.ItemIsEnabled
                 )
             tree_item.setText(0, label)
 
@@ -1494,8 +1553,8 @@ class ComponentsPage(BasePage):
         # 保存选择的组件
         self.parent.selected_components = {}
         for item in self.iter_tree_items():
-            key = item.data(0, Qt.ItemDataRole.UserRole)
-            state = item.checkState(0) == Qt.CheckState.Checked
+            key = item.data(0, Qt.UserRole)
+            state = item.checkState(0) == Qt.Checked
             self.parent.selected_components[key] = state
 
         self.parent.need_space = self.need_space
@@ -1505,7 +1564,7 @@ class ComponentsPage(BasePage):
         self.parent.cancel_installation()
 
     def on_item_hovered(self, item):
-        component_key = item.data(0, Qt.ItemDataRole.UserRole)
+        component_key = item.data(0, Qt.UserRole)
         description = self.items_by_id.get(component_key, {}).get(
             "desc", "未找到描述"
         )
@@ -1516,13 +1575,13 @@ class ComponentsPage(BasePage):
     def on_item_clicked(self, item, column):
         # 如果点击的是父项目，更新子项目的选择状态
         if item.childCount() > 0:
-            with QSignalBlocker(self.components_list):
+            with blocked_signals(self.components_list):
                 stack = [item.child(index) for index in range(item.childCount())]
                 while stack:
                     child = stack.pop()
                     if (
-                        child.flags() & Qt.ItemFlag.ItemIsEnabled
-                        and child.flags() & Qt.ItemFlag.ItemIsUserCheckable
+                        child.flags() & Qt.ItemIsEnabled
+                        and child.flags() & Qt.ItemIsUserCheckable
                     ):
                         child.setCheckState(0, item.checkState(0))
                     stack.extend(
@@ -1533,9 +1592,9 @@ class ComponentsPage(BasePage):
     def get_selected_components_sizes(self):
         total_size = 0
         for component in self.iter_tree_items():
-            if component.checkState(0) != Qt.CheckState.Checked:
+            if component.checkState(0) != Qt.Checked:
                 continue
-            component_id = component.data(0, Qt.ItemDataRole.UserRole)
+            component_id = component.data(0, Qt.UserRole)
             for file_name in get_component_files(self.items_by_id[component_id]):
                 total_size += self.get_file_installed_size(file_name)
         return total_size
@@ -1599,14 +1658,14 @@ class ComponentsPage(BasePage):
         return self.tree_items_by_id.get(component_id)
 
     @staticmethod
-    def find_items_recursive(tree, text, column=0, match_flag=Qt.MatchFlag.MatchContains):
+    def find_items_recursive(tree, text, column=0, match_flag=Qt.MatchContains):
         def search(items, results):
             for item in items:
                 item_text = item.text(column)
                 # Check for a match based on the specified flag
                 if (
-                        (match_flag == Qt.MatchFlag.MatchContains and text in item_text) or
-                        (match_flag == Qt.MatchFlag.MatchExactly and item_text == text)
+                        (match_flag == Qt.MatchContains and text in item_text) or
+                        (match_flag == Qt.MatchExactly and item_text == text)
                 ):
                     results.append(item)
                 # Recursively search children
@@ -1623,19 +1682,19 @@ class ComponentsPage(BasePage):
 
     def synchronize_selection(self):
         """Enforce dependency and parent-state invariants without signal recursion."""
-        with QSignalBlocker(self.components_list):
+        with blocked_signals(self.components_list):
             changed = True
             while changed:
                 changed = False
                 for component_id, tree_item in self.tree_items_by_id.items():
-                    if tree_item.checkState(0) != Qt.CheckState.Checked:
+                    if tree_item.checkState(0) != Qt.Checked:
                         continue
                     for dependency_id in self.items_by_id[component_id].get(
                         "dependencies", []
                     ):
                         dependency = self.tree_items_by_id[dependency_id]
-                        if dependency.checkState(0) != Qt.CheckState.Checked:
-                            dependency.setCheckState(0, Qt.CheckState.Checked)
+                        if dependency.checkState(0) != Qt.Checked:
+                            dependency.setCheckState(0, Qt.Checked)
                             changed = True
 
             items_by_depth = sorted(
@@ -1650,12 +1709,12 @@ class ComponentsPage(BasePage):
                     parent.child(index).checkState(0)
                     for index in range(parent.childCount())
                 ]
-                if all(state == Qt.CheckState.Checked for state in states):
-                    parent.setCheckState(0, Qt.CheckState.Checked)
-                elif all(state == Qt.CheckState.Unchecked for state in states):
-                    parent.setCheckState(0, Qt.CheckState.Unchecked)
+                if all(state == Qt.Checked for state in states):
+                    parent.setCheckState(0, Qt.Checked)
+                elif all(state == Qt.Unchecked for state in states):
+                    parent.setCheckState(0, Qt.Unchecked)
                 else:
-                    parent.setCheckState(0, Qt.CheckState.PartiallyChecked)
+                    parent.setCheckState(0, Qt.PartiallyChecked)
 
         self.on_select_change_size.emit(self.get_selected_components_sizes())
 
@@ -2224,7 +2283,8 @@ def main():
 
     window = InstallerWindow()
     window.show()
-    sys.exit(app.exec())
+    exec_method = getattr(app, "exec", None) or app.exec_
+    sys.exit(exec_method())
 
 
 if __name__ == "__main__":
