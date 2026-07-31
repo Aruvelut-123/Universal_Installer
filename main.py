@@ -4,6 +4,9 @@ import platform
 import sys
 import shutil
 import ctypes
+import bz2
+import gzip
+import lzma
 import zipfile
 import rarfile
 import py7zr
@@ -284,13 +287,20 @@ class InstallThread(QThread):
         """根据完整文件名返回受支持的文件类型。"""
         filename = filename.lower()
         suffix_map = {
-            '.tar.gz': 'tar.gz',
-            '.tgz': 'tar.gz',
+            '.tar.bz2': 'tar',
+            '.tar.gz': 'tar',
+            '.tar.xz': 'tar',
+            '.tbz2': 'tar',
+            '.tgz': 'tar',
+            '.txz': 'tar',
+            '.tbz': 'tar',
             '.zip': 'zip',
             '.rar': 'rar',
             '.7z': '7z',
             '.tar': 'tar',
-            '.txt': 'txt',
+            '.bz2': 'bzip2',
+            '.gz': 'gzip',
+            '.xz': 'xz',
         }
         for suffix, file_type in suffix_map.items():
             if filename.endswith(suffix):
@@ -309,9 +319,21 @@ class InstallThread(QThread):
         elif archive_type == '7z':
             with py7zr.SevenZipFile(archive_name, "r") as archive:
                 archive.extractall(in_path)
-        elif archive_type in {'tar', 'tar.gz'}:
+        elif archive_type == 'tar':
             with tarfile.open(archive_name, "r:*") as archive:
                 archive.extractall(in_path)
+        elif archive_type in {'gzip', 'bzip2', 'xz'}:
+            opener, suffix = {
+                'gzip': (gzip.open, '.gz'),
+                'bzip2': (bz2.open, '.bz2'),
+                'xz': (lzma.open, '.xz'),
+            }[archive_type]
+            output_name = os.path.basename(archive_name)[:-len(suffix)]
+            if not output_name:
+                raise ValueError(f"无法确定解压后的文件名: {archive_name}")
+            output_path = os.path.join(in_path, output_name)
+            with opener(archive_name, 'rb') as source, open(output_path, 'wb') as target:
+                shutil.copyfileobj(source, target)
         else:
             raise ValueError(f"未知的压缩类型: {archive_type}")
 
@@ -319,22 +341,22 @@ class InstallThread(QThread):
         """统一处理单个文件"""
         print(f"[DEBUG] 处理文件: {file}, is_platform_file={is_platform_file}")
         
-        # 处理txt文件
-        if file.endswith('.txt'):
-            in_path, _ = self._get_file_info(file, item)
-            if in_path:
-                print(f"[DEBUG] txt文件直接复制: {file} -> {in_path}")
-                shutil.copy(file, in_path)
-            return
-        
         # 获取文件信息
         in_path, file_type = self._get_file_info(file, item)
-        if not in_path or not file_type:
-            print(f"[DEBUG] 无法获取文件信息，跳过")
+        if not in_path:
+            print(f"[DEBUG] 无法获取目标路径，跳过: {file}")
             return
-        
+
         # 规范化文件路径
-        file_path = file.replace("/", "\\")
+        file_path = os.path.abspath(
+            file.replace("\\", os.sep).replace("/", os.sep)
+        )
+        if file_type is None:
+            os.makedirs(in_path, exist_ok=True)
+            print(f"[DEBUG] 普通文件直接复制: {file_path} -> {in_path}")
+            shutil.copy2(file_path, in_path)
+            return
+
         print(f"[DEBUG] 调用run_extract: archive={file_path}, type={file_type}, in_path={in_path}")
         self.run_extract(file_path, file_type, in_path)
 
@@ -993,93 +1015,60 @@ class ComponentsPage(BasePage):
                         if item["id"] == component.data(0, Qt.ItemDataRole.UserRole):
                             if item["files"] is not None:
                                 for file in item["files"]:
-                                    file_type = ""
-                                    result = file.split(".")
-                                    match result[1]:
-                                        case "zip":
-                                            file_type = "zip"
-                                        case "rar":
-                                            file_type = "rar"
-                                        case "7z":
-                                            file_type = "7z"
-                                        case "tar":
-                                            file_type = "tar.gz"
-                                        case _:
-                                            continue
+                                    file_type = InstallThread._get_file_type(file)
                                     file = file.replace("/", "\\")
                                     size += self.get_archive_size(file, file_type)
                             if "x64file" in item or "x86file" in item:
                                 if platform.machine() == "AMD64":
                                     if "x64file" in item:
                                         for file in item["x64file"]:
-                                            file_type = ""
-                                            result = file.split(".")
-                                            match result[1]:
-                                                case "zip":
-                                                    file_type = "zip"
-                                                case "rar":
-                                                    file_type = "rar"
-                                                case "7z":
-                                                    file_type = "7z"
-                                                case "tar":
-                                                    file_type = "tar.gz"
-                                                case _:
-                                                    continue
+                                            file_type = InstallThread._get_file_type(file)
                                             file = file.replace("/", "\\")
                                             size += self.get_archive_size(file, file_type)
                                 elif platform.machine() == "x86":
                                     if "x86file" in item:
                                         for file in item["x86file"]:
-                                            file_type = ""
-                                            result = file.split(".")
-                                            match result[1]:
-                                                case "zip":
-                                                    file_type = "zip"
-                                                case "rar":
-                                                    file_type = "rar"
-                                                case "7z":
-                                                    file_type = "7z"
-                                                case "tar":
-                                                    file_type = "tar.gz"
-                                                case _:
-                                                    continue
+                                            file_type = InstallThread._get_file_type(file)
                                             file = file.replace("/", "\\")
                                             size += self.get_archive_size(file, file_type)
         return size
 
     @staticmethod
     def get_archive_size(file, file_type) -> int:
-        path = file.split("\\")
-        r_path = os.getcwd()
-        for p in path:
-            r_path = os.path.join(r_path, p)
-        file = r_path
-        if file_type == "zip":
-            import zipfile
-            try:
+        file = os.path.abspath(file.replace("\\", os.sep).replace("/", os.sep))
+        try:
+            if file_type is None:
+                return os.path.getsize(file)
+            if file_type == "zip":
                 with zipfile.ZipFile(file, 'r') as zip_ref:
                     return sum(info.file_size for info in zip_ref.infolist())
-            except Exception as e:
-                print(e)
-                return 0
-        elif file_type == "rar":
-            import rarfile
-            try:
+            if file_type == "rar":
                 with rarfile.RarFile(file, 'r') as rar_ref:
                     return sum(f.file_size for f in rar_ref.infolist())
-            except Exception as e:
-                print(e)
-                return 0
-        elif file_type == "7z":
-            import py7zr
-            try:
+            if file_type == "7z":
                 with py7zr.SevenZipFile(file, 'r') as sevenzip_ref:
-                    return sum(f.file_properties().get("uncompressed") for f in sevenzip_ref.files)
-            except Exception as e:
-                print(e)
-                return 0
-        else:
-            NotImplementedError("Not Implemented Type: " + file_type)
+                    return sum(
+                        (getattr(info, 'uncompressed', 0) or 0)
+                        for info in sevenzip_ref.list()
+                        if not getattr(info, 'is_directory', False)
+                    )
+            if file_type == "tar":
+                with tarfile.open(file, 'r:*') as tar_ref:
+                    return sum(info.size for info in tar_ref.getmembers() if info.isfile())
+            if file_type in {'gzip', 'bzip2', 'xz'}:
+                opener = {
+                    'gzip': gzip.open,
+                    'bzip2': bz2.open,
+                    'xz': lzma.open,
+                }[file_type]
+                with opener(file, 'rb') as archive:
+                    return sum(
+                        len(chunk)
+                        for chunk in iter(lambda: archive.read(1024 * 1024), b'')
+                    )
+            raise NotImplementedError(f"不支持的压缩类型: {file_type}")
+        except (OSError, EOFError, ValueError, zipfile.BadZipFile, tarfile.TarError) as e:
+            print(f"无法读取压缩包大小 {file}: {e}")
             return 0
 
     def find_component_by_id(self, component_id):
