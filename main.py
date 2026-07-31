@@ -2,6 +2,7 @@ import atexit
 import json
 import os
 import platform
+import subprocess
 import sys
 import shutil
 import ctypes
@@ -139,7 +140,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import (
     QAction, QActionGroup, QColor, QFont, QIcon, QPalette, QPixmap
 )
-from PySide6.QtCore import QSettings, QSize, Qt, QThread, Signal
+from PySide6.QtCore import QSettings, QSignalBlocker, Qt, QThread, Signal
 installer_metadata: dict[str, Any] | None = None
 
 REQUIRED_INSTALLER_METADATA = {
@@ -422,6 +423,78 @@ def apply_application_theme(theme: str) -> None:
     app.setPalette(create_theme_palette(theme))
     app.setStyleSheet(create_theme_stylesheet(theme))
 
+
+def format_size(size: int) -> str:
+    """Format a byte count using binary units."""
+    value = float(max(size, 0))
+    for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+        if value < 1024 or unit == "TiB":
+            return f"{int(value)} {unit}" if unit == "B" else f"{value:.2f} {unit}"
+        value /= 1024
+
+
+def get_platform_file_candidates(system=None, machine=None) -> tuple[str, ...]:
+    """Return platform file keys in preferred-to-compatible order."""
+    system = (system or platform.system()).lower()
+    machine = (machine or platform.machine()).lower()
+    architecture = {
+        "amd64": "x64", "x86_64": "x64", "x64": "x64",
+        "i386": "x86", "i686": "x86", "x86": "x86",
+        "arm64": "arm64", "aarch64": "arm64",
+    }.get(machine)
+    if system == "darwin":
+        return ("macfile",)
+    if system not in {"windows", "linux"} or architecture is None:
+        return ()
+
+    prefix = "win" if system == "windows" else "linux"
+    compatibility = {
+        "arm64": ("arm64", "x64", "x86"),
+        "x64": ("x64", "x86"),
+        "x86": ("x86", "x64"),
+    }[architecture]
+    return tuple(f"{prefix}{candidate}file" for candidate in compatibility)
+
+
+def get_component_files(item: dict) -> list[str]:
+    """Return common files plus the best available platform-specific set."""
+    files = list(item.get("files") or [])
+    for key in get_platform_file_candidates():
+        platform_files = item.get(key)
+        if platform_files:
+            files.extend(platform_files)
+            break
+    return files
+
+
+def get_default_install_path(item: dict) -> str:
+    key = {
+        "windows": "default_path",
+        "linux": "default_path_linux",
+        "darwin": "default_path_macos",
+    }.get(platform.system().lower())
+    return item.get(key, "") if key else ""
+
+
+def relaunch_as_admin() -> None:
+    """Relaunch source or compiled Windows application with elevation."""
+    if platform.system().lower() != "windows":
+        return
+    arguments = list(sys.argv[1:])
+    if "__compiled__" not in globals():
+        arguments.insert(0, str(Path(__file__).resolve()))
+    parameters = subprocess.list2cmdline(arguments)
+    result = ctypes.windll.shell32.ShellExecuteW(
+        None,
+        "runas",
+        sys.executable,
+        parameters,
+        str(APPLICATION_DIR),
+        1,
+    )
+    if result <= 32:
+        raise OSError(f"请求管理员权限失败，ShellExecuteW 返回 {result}")
+
 # 检查管理员权限的函数
 def is_admin():
     try:
@@ -440,47 +513,21 @@ class InstallThread(QThread):
         super().__init__()
         self.path = path
         self.components = components
+        self.items_by_id = {
+            item["id"]: item for item in get_metadata()["items"]
+        }
         self.success = False
         print(f"[DEBUG] InstallThread初始化: path={path}, components={components}")
 
-    def _get_platform_files_key(self):
+    @staticmethod
+    def _get_platform_files_key():
         """根据当前平台和架构返回对应的文件键名"""
-        system = platform.system().lower()
-        machine = platform.machine().lower()
-        
-        print(f"[DEBUG] 检测平台: system={system}, machine={machine}")
-        
-        platform_map = {
-            'windows': {
-                'amd64': 'winx64file',
-                'x86_64': 'winx64file',
-                'x64': 'winx64file',
-                'i386': 'winx86file',
-                'i686': 'winx86file',
-                'x86': 'winx86file',
-                'arm64': 'winarm64file',
-                'aarch64': 'winarm64file',
-            },
-            'linux': {
-                'x86_64': 'linuxx64file',
-                'amd64': 'linuxx64file',
-                'i386': 'linuxx86file',
-                'i686': 'linuxx86file',
-                'x86': 'linuxx86file',
-                'arm64': 'linuxarm64file',
-                'aarch64': 'linuxarm64file',
-            },
-        }
-
-        if system == 'darwin':
-            return 'macfile'
-        if system in platform_map:
-            key = platform_map[system].get(machine)
-            if key:
-                return key
-        
-        print(f"[DEBUG] 不支持的平台: {system}/{machine}")
-        return None
+        candidates = get_platform_file_candidates()
+        print(
+            f"[DEBUG] 检测平台: system={platform.system().lower()}, "
+            f"machine={platform.machine().lower()}, candidates={candidates}"
+        )
+        return candidates[0] if candidates else None
 
     def _get_file_info(self, file, item):
         """获取文件的目标路径和类型"""
@@ -626,42 +673,12 @@ class InstallThread(QThread):
     def _process_component(self, component):
         """处理单个组件"""
         print(f"[DEBUG] 开始安装组件: {component}")
-        
-        metadata = get_metadata()
-        print(f"[DEBUG] 获取到元数据，items数量: {len(metadata['items']) if metadata else 0}")
-        
-        for item in metadata["items"]:
-            if item["id"] != component:
-                continue
-                
-            print(f"[DEBUG] 找到匹配的组件: {component}")
-            
-            # 1. 处理通用文件
-            if item.get("files"):
-                print(f"[DEBUG] 组件 {component} 有通用文件列表: {item['files']}")
-                self._process_files(item["files"], item)
-            
-            # 2. 处理平台特定文件
-            platform_key = self._get_platform_files_key()
-            if platform_key and platform_key in item:
-                print(f"[DEBUG] 处理平台特定文件: {platform_key}")
-                self._process_files(item[platform_key], item)
-            
-            # 如果平台特定文件找不到，尝试查找替代方案
-            elif platform_key:
-                fallback_map = {
-                    'winarm64file': ('winx64file', 'winx86file'),
-                    'winx64file': ('winx86file',),
-                    'winx86file': ('winx64file',),
-                    'linuxarm64file': ('linuxx64file', 'linuxx86file'),
-                    'linuxx64file': ('linuxx86file',),
-                    'linuxx86file': ('linuxx64file',),
-                }
-                for fallback_key in fallback_map.get(platform_key, ()):
-                    if item.get(fallback_key):
-                        print(f"[DEBUG] 尝试使用替代架构: {fallback_key}")
-                        self._process_files(item[fallback_key], item)
-                        break
+        item = self.items_by_id.get(component)
+        if item is None:
+            raise KeyError(f"组件不存在: {component}")
+        files = get_component_files(item)
+        print(f"[DEBUG] 组件 {component} 文件列表: {files}")
+        self._process_files(files, item)
 
     def run(self):
         print("[DEBUG] run()方法开始执行")
@@ -758,20 +775,10 @@ class BasePage(QWidget):
         super().__init__(parent)
         self.parent = parent
 
-        # 设置固定大小
-        window_size = QSize()
-        window_size.setWidth(WINDOW_SIZE[0])
-        window_size.setHeight(WINDOW_SIZE[1])
-        self.setFixedSize(window_size)
-
-        try:
-            open(get_installer_metadata()["left_pic"]).close()
-        except:
+        if not Path(INSTALLER_METADATA["left_pic"]).is_file():
             has_left_area = False
 
-        try:
-            open(get_installer_metadata()["header_pic"]).close()
-        except:
+        if not Path(INSTALLER_METADATA["header_pic"]).is_file():
             has_banner = False
 
         if has_banner:
@@ -945,7 +952,7 @@ class LicensePage(BasePage):
         try:
             with open(get_installer_metadata()["license_file"], "r", encoding="utf-8") as f:
                 self.license_text.setText(f.read())
-        except:
+        except OSError:
             self.license_text.setText("许可协议文件未找到。\n一般意味着此工具为 All Rights Reserved 协议。")
 
         # 添加提示文本
@@ -999,6 +1006,7 @@ class PasswordPage(BasePage):
             # 添加提示文本
             tip_label = QLabel("请加群 "+get_installer_metadata()["qq_group"]+" 获取密码！")
             tip_label.setStyleSheet("font-size: 9pt; color: #4BA348; font-weight: bold;")
+            password_layout.addWidget(tip_label)
 
         # 密码输入框
         password_form = QHBoxLayout()
@@ -1010,7 +1018,6 @@ class PasswordPage(BasePage):
         password_form.addWidget(password_label)
         password_form.addWidget(self.password_input)
 
-        password_layout.addWidget(tip_label)
         password_layout.addLayout(password_form)
 
         self.content_layout.addWidget(password_group)
@@ -1057,68 +1064,77 @@ class ComponentsPage(BasePage):
         self.components_list.setHeaderHidden(True)
         self.components_list.setColumnCount(1)
         self.components_list.setMouseTracking(True)  # 启用鼠标跟踪
+        items = get_metadata()["items"]
+        self.items_by_id = {item["id"]: item for item in items}
+        self.tree_items_by_id = {}
+        self.archive_size_cache = {}
+        self.has_missing_required_files = False
+
+        # First create every node so parents may appear after their children in JSON.
+        for item in items:
+            tree_item = QTreeWidgetItem()
+            tree_item.setData(0, Qt.ItemDataRole.UserRole, item["id"])
+            self.tree_items_by_id[item["id"]] = tree_item
+
+            missing_files = [
+                file_name
+                for file_name in get_component_files(item)
+                if not os.path.isfile(
+                    os.path.abspath(
+                        file_name.replace("\\", os.sep).replace("/", os.sep)
+                    )
+                )
+            ]
+            if item.get("required"):
+                label = f"{item['name']} (必选)"
+                tree_item.setCheckState(0, Qt.CheckState.Checked)
+                tree_item.setFlags(
+                    tree_item.flags() & ~Qt.ItemFlag.ItemIsUserCheckable
+                )
+            else:
+                label = item["name"]
+                tree_item.setFlags(
+                    tree_item.flags() | Qt.ItemFlag.ItemIsUserCheckable
+                )
+                initial_state = (
+                    Qt.CheckState.PartiallyChecked
+                    if item.get("part_checked")
+                    else Qt.CheckState.Checked
+                    if item.get("checked")
+                    else Qt.CheckState.Unchecked
+                )
+                tree_item.setCheckState(0, initial_state)
+
+            if missing_files:
+                label = f"{item['name']} (未找到对应文件)"
+                tree_item.setFlags(
+                    tree_item.flags() & ~Qt.ItemFlag.ItemIsEnabled
+                )
+                if item.get("required"):
+                    self.has_missing_required_files = True
+                else:
+                    tree_item.setCheckState(0, Qt.CheckState.Unchecked)
+                print(
+                    f"组件 {item['id']} 缺少文件: {', '.join(missing_files)}"
+                )
+            if item.get("disabled"):
+                tree_item.setFlags(
+                    tree_item.flags() & ~Qt.ItemFlag.ItemIsEnabled
+                )
+            tree_item.setText(0, label)
+
+        # Then attach nodes by stable ID instead of fuzzy display-name lookup.
+        for item in items:
+            tree_item = self.tree_items_by_id[item["id"]]
+            parent_id = item.get("after")
+            if parent_id is None:
+                self.components_list.addTopLevelItem(tree_item)
+            else:
+                self.tree_items_by_id[parent_id].addChild(tree_item)
+
         self.components_list.itemEntered.connect(self.on_item_hovered)
         self.components_list.itemClicked.connect(self.on_item_clicked)
         self.components_list.itemChanged.connect(self.on_item_changed)
-
-        metadata = get_metadata()
-        for item in metadata["items"]:
-            file_not_found = False
-            if item["after"] is not None:
-                main_item = QTreeWidgetItem()
-            else:
-                main_item = QTreeWidgetItem(self.components_list)
-            main_item.setFlags(main_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            if item["files"] is not None:
-                for file in item["files"]:
-                    path = file.split("\\")
-                    r_path = os.getcwd()
-                    for p in path:
-                        r_path = os.path.join(r_path, p)
-                    if not os.path.exists(r_path):
-                        file_not_found = True
-                        break
-            if "x86file" in item:
-                for file in item["x86file"]:
-                    if not os.path.exists(file):
-                        file_not_found = True
-                        break
-            if "x64file" in item:
-                for file in item["x64file"]:
-                    if not os.path.exists(file):
-                        file_not_found = True
-                        break
-
-            if item["required"]:
-                if file_not_found:
-                    main_item.setText(0, item["name"]+" (未找到对应文件)")
-                else:
-                    main_item.setText(0, item["name"] + " (必选)")
-                main_item.setFlags(main_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
-            else:
-                if file_not_found:
-                    main_item.setText(0, item["name"] + " (未找到对应文件)")
-                    main_item.setFlags(main_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
-                else:
-                    main_item.setText(0, item["name"])
-            if "disabled" in item:
-                if item["disabled"]:
-                    main_item.setFlags(main_item.flags() & ~Qt.ItemFlag.ItemIsEnabled)
-            if item["checked"]:
-                if "part_checked" in item:
-                    if item["part_checked"]:
-                        main_item.setCheckState(0, Qt.CheckState.PartiallyChecked)
-                    else:
-                        main_item.setCheckState(0, Qt.CheckState.Checked)
-                else:
-                    main_item.setCheckState(0, Qt.CheckState.Checked)
-            else: main_item.setCheckState(0, Qt.CheckState.Unchecked)
-            main_item.setData(0, Qt.ItemDataRole.UserRole, item["id"])
-            if item["after"] is not None:
-                for item2 in metadata["items"]:
-                    if item2["id"] == item["after"]:
-                        self.components_list.findItems(item2["name"], Qt.MatchFlag.MatchContains, 0)[0].addChild(main_item)
-                        break
 
         # 空间信息
         self.space_label = QLabel("所需空间: 0 MB")
@@ -1153,49 +1169,35 @@ class ComponentsPage(BasePage):
         else:
             back_btn = self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("password"))
         self.next_button = self.add_button("下一步(N)", self.on_next, "primary")
+        self.next_button.setEnabled(not self.has_missing_required_files)
         self.add_button("取消(C)", self.on_cancel)
         self.on_select_change_size.connect(self.on_select_change_size_method)
-        self.on_select_change_size.emit(self.get_selected_components_sizes())
+        self.synchronize_selection()
 
     def on_select_change_size_method(self, size:int):
-        text = "所需空间："
-        KB = 1000  # Use 1024 for binary sizes
-        MB = 1000 * 1000
-        GB = 1000 * 1000 * 1000
-        TB = 1000 * 1000 * 1000 * 1000
-
-        if size < KB:
-            text += f"{size} B"
-        elif size < MB:
-            text += f"{size / KB:.2f} KB"
-        elif size < GB:
-            text += f"{size / MB:.2f} MB"
-        elif size < TB:
-            text += f"{size / GB:.2f} GB"
-        else:
-            text += f"{size / TB:.2f} TB"
-		
         self.need_space = size
-		
-        self.space_label.setText(text)
+        self.space_label.setText(f"所需空间：{format_size(size)}")
+
+    def iter_tree_items(self):
+        stack = [
+            self.components_list.topLevelItem(index)
+            for index in reversed(range(self.components_list.topLevelItemCount()))
+        ]
+        while stack:
+            item = stack.pop()
+            yield item
+            stack.extend(
+                item.child(index)
+                for index in reversed(range(item.childCount()))
+            )
 
     def on_next(self):
         # 保存选择的组件
         self.parent.selected_components = {}
-        for i in range(self.components_list.topLevelItemCount()):
-            item = self.components_list.topLevelItem(i)
+        for item in self.iter_tree_items():
             key = item.data(0, Qt.ItemDataRole.UserRole)
             state = item.checkState(0) == Qt.CheckState.Checked
-
-            # 对于父项目，只保存其自身状态
             self.parent.selected_components[key] = state
-
-            # 检查子项目
-            for j in range(item.childCount()):
-                child = item.child(j)
-                child_key = child.data(0, Qt.ItemDataRole.UserRole)
-                child_state = child.checkState(0) == Qt.CheckState.Checked
-                self.parent.selected_components[child_key] = child_state
 
         self.parent.need_space = self.need_space
         self.parent.go_to_page("directory")
@@ -1205,15 +1207,9 @@ class ComponentsPage(BasePage):
 
     def on_item_hovered(self, item):
         component_key = item.data(0, Qt.ItemDataRole.UserRole)
-        metadata = get_metadata()
-        description = ""
-
-        for item in metadata["items"]:
-            if item["id"] == component_key:
-                description = item["desc"]
-                break
-
-        if description == "": description = "未找到描述"
+        description = self.items_by_id.get(component_key, {}).get(
+            "desc", "未找到描述"
+        )
 
         # 更新描述文本
         self.description_text.setHtml(description)
@@ -1221,45 +1217,46 @@ class ComponentsPage(BasePage):
     def on_item_clicked(self, item, column):
         # 如果点击的是父项目，更新子项目的选择状态
         if item.childCount() > 0:
-            # 暂时断开信号避免递归调用
-            self.components_list.itemChanged.disconnect(self.on_item_changed)
-
-            # 设置所有子项目的状态与父项目一致
-            for i in range(item.childCount()):
-                child = item.child(i)
-                if child.flags() & Qt.ItemFlag.ItemIsEnabled:
-                    child.setCheckState(0, item.checkState(0))
-
-            # 重新连接信号
-            self.components_list.itemChanged.connect(self.on_item_changed)
-        self.on_select_change_size.emit(self.get_selected_components_sizes())
+            with QSignalBlocker(self.components_list):
+                stack = [item.child(index) for index in range(item.childCount())]
+                while stack:
+                    child = stack.pop()
+                    if (
+                        child.flags() & Qt.ItemFlag.ItemIsEnabled
+                        and child.flags() & Qt.ItemFlag.ItemIsUserCheckable
+                    ):
+                        child.setCheckState(0, item.checkState(0))
+                    stack.extend(
+                        child.child(index) for index in range(child.childCount())
+                    )
+        self.synchronize_selection()
 
     def get_selected_components_sizes(self):
-        size = 0
-        for item in get_metadata()["items"]:
-            for component in self.find_items_recursive(self.components_list, item["name"]):
-                if component.checkState(0) == Qt.CheckState.Checked:
-                    for item in get_metadata()["items"]:
-                        if item["id"] == component.data(0, Qt.ItemDataRole.UserRole):
-                            if item["files"] is not None:
-                                for file in item["files"]:
-                                    file_type = InstallThread._get_file_type(file)
-                                    file = file.replace("/", "\\")
-                                    size += self.get_archive_size(file, file_type)
-                            if "x64file" in item or "x86file" in item:
-                                if platform.machine() == "AMD64":
-                                    if "x64file" in item:
-                                        for file in item["x64file"]:
-                                            file_type = InstallThread._get_file_type(file)
-                                            file = file.replace("/", "\\")
-                                            size += self.get_archive_size(file, file_type)
-                                elif platform.machine() == "x86":
-                                    if "x86file" in item:
-                                        for file in item["x86file"]:
-                                            file_type = InstallThread._get_file_type(file)
-                                            file = file.replace("/", "\\")
-                                            size += self.get_archive_size(file, file_type)
-        return size
+        total_size = 0
+        for component in self.iter_tree_items():
+            if component.checkState(0) != Qt.CheckState.Checked:
+                continue
+            component_id = component.data(0, Qt.ItemDataRole.UserRole)
+            for file_name in get_component_files(self.items_by_id[component_id]):
+                total_size += self.get_file_installed_size(file_name)
+        return total_size
+
+    def get_file_installed_size(self, file_name):
+        path = os.path.abspath(
+            file_name.replace("\\", os.sep).replace("/", os.sep)
+        )
+        try:
+            stat = os.stat(path)
+        except OSError as error:
+            print(f"无法读取文件大小 {path}: {error}")
+            return 0
+        file_type = InstallThread._get_file_type(path)
+        cache_key = (path, file_type, stat.st_size, stat.st_mtime_ns)
+        if cache_key not in self.archive_size_cache:
+            self.archive_size_cache[cache_key] = self.get_archive_size(
+                path, file_type
+            )
+        return self.archive_size_cache[cache_key]
 
     @staticmethod
     def get_archive_size(file, file_type) -> int:
@@ -1295,26 +1292,12 @@ class ComponentsPage(BasePage):
                         for chunk in iter(lambda: archive.read(1024 * 1024), b'')
                     )
             raise NotImplementedError(f"不支持的压缩类型: {file_type}")
-        except (OSError, EOFError, ValueError, zipfile.BadZipFile, tarfile.TarError) as e:
+        except Exception as e:
             print(f"无法读取压缩包大小 {file}: {e}")
             return 0
 
     def find_component_by_id(self, component_id):
-        # 递归搜索QTreeWidget中匹配ID的项目
-        def search(item):
-            if item.data(0, Qt.ItemDataRole.UserRole) == component_id:
-                return item
-            for i in range(item.childCount()):
-                result = search(item.child(i))
-                if result:
-                    return result
-            return None
-
-        for i in range(self.components_list.topLevelItemCount()):
-            result = search(self.components_list.topLevelItem(i))
-            if result:
-                return result
-        return None
+        return self.tree_items_by_id.get(component_id)
 
     @staticmethod
     def find_items_recursive(tree, text, column=0, match_flag=Qt.MatchFlag.MatchContains):
@@ -1337,49 +1320,53 @@ class ComponentsPage(BasePage):
         return results
 
     def on_item_changed(self, item, column):
-        component_key = item.data(0, Qt.ItemDataRole.UserRole)
+        self.synchronize_selection()
 
-        # 仅当项目被选中时处理依赖
-        if item.checkState(0) == Qt.CheckState.Checked:
-            for items in metadata["items"]:
-                if items["id"] == component_key:
-                    # 获取组件的依赖项列表（假设component_key中有dependencies字段）
-                    dependencies = items.get('dependencies', [])
-                    for dependency_id in dependencies:
-                        # 在当前树中查找依赖项（需要实现find_component_by_id方法）
-                        dep_item = self.find_component_by_id(dependency_id)
-                        if dep_item and dep_item.checkState(0) != Qt.CheckState.Checked:
-                            dep_item.setCheckState(0, Qt.CheckState.Checked)
-                    break
+    def synchronize_selection(self):
+        """Enforce dependency and parent-state invariants without signal recursion."""
+        with QSignalBlocker(self.components_list):
+            changed = True
+            while changed:
+                changed = False
+                for component_id, tree_item in self.tree_items_by_id.items():
+                    if tree_item.checkState(0) != Qt.CheckState.Checked:
+                        continue
+                    for dependency_id in self.items_by_id[component_id].get(
+                        "dependencies", []
+                    ):
+                        dependency = self.tree_items_by_id[dependency_id]
+                        if dependency.checkState(0) != Qt.CheckState.Checked:
+                            dependency.setCheckState(0, Qt.CheckState.Checked)
+                            changed = True
 
-        # 当项目状态改变时调用
-        if item.parent() is not None:
-            # 如果这是子项目，更新父项目的状态
-            parent = item.parent()
-
-            # 检查所有子项目的状态
-            all_checked = True
-            any_checked = False
-            for i in range(parent.childCount()):
-                child = parent.child(i)
-                if child.checkState(0) == Qt.CheckState.Checked:
-                    any_checked = True
+            items_by_depth = sorted(
+                self.tree_items_by_id.values(),
+                key=lambda tree_item: self._tree_depth(tree_item),
+                reverse=True,
+            )
+            for parent in items_by_depth:
+                if parent.childCount() == 0:
+                    continue
+                states = [
+                    parent.child(index).checkState(0)
+                    for index in range(parent.childCount())
+                ]
+                if all(state == Qt.CheckState.Checked for state in states):
+                    parent.setCheckState(0, Qt.CheckState.Checked)
+                elif all(state == Qt.CheckState.Unchecked for state in states):
+                    parent.setCheckState(0, Qt.CheckState.Unchecked)
                 else:
-                    all_checked = False
+                    parent.setCheckState(0, Qt.CheckState.PartiallyChecked)
 
-            # 暂时断开信号避免递归调用
-            self.components_list.itemChanged.disconnect(self.on_item_changed)
+        self.on_select_change_size.emit(self.get_selected_components_sizes())
 
-            # 设置父项目的状态
-            if all_checked:
-                parent.setCheckState(0, Qt.CheckState.Checked)
-            elif any_checked:
-                parent.setCheckState(0, Qt.CheckState.PartiallyChecked)
-            else:
-                parent.setCheckState(0, Qt.CheckState.Unchecked)
-
-            # 重新连接信号
-            self.components_list.itemChanged.connect(self.on_item_changed)
+    @staticmethod
+    def _tree_depth(item):
+        depth = 0
+        while item.parent() is not None:
+            item = item.parent()
+            depth += 1
+        return depth
 
 # 安装位置选择页面
 class DirectoryPage(BasePage):
@@ -1400,28 +1387,14 @@ class DirectoryPage(BasePage):
             path_layout.addWidget(tip_label)
 
         
-        if platform.system().lower() == "windows":
-            if "default_path" in get_metadata()["items"][MAIN_ITEM]:
-                self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path"]
-            else:
-                self.default_path = ""
-        elif platform.system().lower() == "linux":
-            if "default_path_linux" in get_metadata()["items"][MAIN_ITEM]:
-                self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path_linux"]
-            else:
-                self.default_path = ""
-        elif platform.system().lower() == "darwin":
-            if "default_path_macos" in get_metadata()["items"][MAIN_ITEM]:
-                self.default_path = get_metadata()["items"][MAIN_ITEM]["default_path_macos"]
-            else:
-                self.default_path = ""
-        else:
-            print("Unsupported Operating System found: "+ platform.system().lower())
-            self.default_path = ""
+        self.default_path = get_default_install_path(
+            get_metadata()["items"][MAIN_ITEM]
+        )
 
         # 路径选择框
         path_form = QHBoxLayout()
         self.path_input = QLineEdit(self.default_path)
+        detect_btn = None
         if "is_steam_game" in get_installer_metadata():
             if get_installer_metadata()["is_steam_game"]:
                 detect_btn = QPushButton("自动检测")
@@ -1487,49 +1460,46 @@ class DirectoryPage(BasePage):
 
     def update_directory(self):
         path = self.detect_steam_path()
-        if path != None:
+        if path is not None:
             self.path_input.setText(path)
             self.update_disk_space()
 
     def detect_steam_path(self):
-        if not "game_name" in get_installer_metadata() or len(get_installer_metadata()["game_name"]) <= 0:
+        game_name = INSTALLER_METADATA.get("game_name", "").strip()
+        if not game_name:
             print("game name not contains in installer metadata, returning default path")
             return self.default_path
-        if self.get_steam_path() == None:
+        steam_path = self.get_steam_path()
+        if steam_path is None:
             print("steam not installed, return default path")
             return self.default_path
-        library_folders = os.path.join(self.get_steam_path(), "steamapps", "libraryfolders.vdf")
+        library_folders = os.path.join(steam_path, "steamapps", "libraryfolders.vdf")
         print("library folders file path: "+library_folders)
         if os.path.exists(library_folders):
             import vdf
-            with open(library_folders, "r", encoding="utf-8", errors="ignore") as f:
-                libraries = vdf.load(f)
-            if "game_id" in get_installer_metadata():
-                game_id = get_installer_metadata()["game_id"]
-                has_game_id = True
-            else:
-                has_game_id = False
-            if "libraryfolders" in libraries:
-                for key, value in libraries["libraryfolders"].items():
-                    if key.isdigit():  # 只处理数字键（库条目）
-                        if has_game_id:
-                            if "apps" in value and "path" in value:
-                                apps = value.get("apps", {})
-                                if str(game_id) in apps:
-                                    if os.path.exists(os.path.join(value.get("path"), "steamapps", "common", get_installer_metadata()["game_name"])):
-                                        print("Find game folder at: "+os.path.join(value.get("path"), "steamapps", "common", get_installer_metadata()["game_name"]))
-                                        return os.path.join(value.get("path"), "steamapps", "common", get_installer_metadata()["game_name"])
-                                    else:
-                                        print("game folder not at right position, returning default path")
-                                        return self.default_path
-                            elif "path" in value:
-                                if os.path.exists(os.path.join(value.get("path"), "steamapps", "common", get_installer_metadata()["game_name"])):
-                                    print("Find game folder at: " + os.path.join(value.get("path"), "steamapps", "common", get_installer_metadata()["game_name"]))
-                                    return os.path.join(value.get("path"), "steamapps", "common", get_installer_metadata()["game_name"])
-                                else:
-                                    continue
-                            else:
-                                continue
+            try:
+                with open(library_folders, "r", encoding="utf-8", errors="ignore") as file:
+                    libraries = vdf.load(file)
+            except (OSError, ValueError) as error:
+                print(f"读取 Steam 库配置失败: {error}")
+                return self.default_path
+
+            game_id = str(INSTALLER_METADATA.get("game_id", ""))
+            for key, value in libraries.get("libraryfolders", {}).items():
+                if not key.isdigit() or not isinstance(value, dict):
+                    continue
+                library_path = value.get("path")
+                if not library_path:
+                    continue
+                apps = value.get("apps", {})
+                if game_id and apps and game_id not in apps:
+                    continue
+                game_path = os.path.join(
+                    library_path, "steamapps", "common", game_name
+                )
+                if os.path.isdir(game_path):
+                    print(f"Find game folder at: {game_path}")
+                    return game_path
             print("Failed to find game folder, returning default path")
             return self.default_path
         else:
@@ -1541,33 +1511,28 @@ class DirectoryPage(BasePage):
         os_name = platform.system().lower()
         if os_name == "windows":
             import winreg
-            if arch == "amd64" or arch == "x86_64":
+            registry_locations = [
+                (winreg.HKEY_CURRENT_USER, r"SOFTWARE\Valve\Steam", ("SteamPath", "InstallPath"), 0),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Valve\Steam", ("InstallPath",), winreg.KEY_WOW64_64KEY),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Valve\Steam", ("InstallPath",), winreg.KEY_WOW64_32KEY),
+            ]
+            for hive, key_path, value_names, view in registry_locations:
                 try:
-                    key = winreg.OpenKey(
-                        winreg.HKEY_LOCAL_MACHINE,
-                        r"SOFTWARE\WOW6432Node\Valve\Steam"
-                    )
-                    path, _ = winreg.QueryValueEx(key, "InstallPath")
-                    winreg.CloseKey(key)
-                    return path
-                except Exception as e:
-                    print(f"读取注册表时出错: {e}")
-                    return None
-            elif arch == "i386" or arch == "x86":
-                try:
-                    key = winreg.OpenKey(
-                        winreg.HKEY_LOCAL_MACHINE,
-                        r"SOFTWARE\Valve\Steam"
-                    )
-                    path, _ = winreg.QueryValueEx(key, "InstallPath")
-                    winreg.CloseKey(key)
-                    return path
-                except Exception as e:
-                    print(f"读取注册表时出错: {e}")
-                    return None
-            else:
-                raise NotImplementedError("Not support arm system for now.")
-        elif platform.system().lower() == "linux":
+                    with winreg.OpenKey(
+                        hive, key_path, 0, winreg.KEY_READ | view
+                    ) as key:
+                        for value_name in value_names:
+                            try:
+                                path, _ = winreg.QueryValueEx(key, value_name)
+                                if path:
+                                    return os.path.normpath(path)
+                            except OSError:
+                                continue
+                except OSError:
+                    continue
+            print(f"未在注册表中找到 Steam，architecture={arch}")
+            return None
+        elif os_name == "linux":
             possible_paths = [
                 os.path.expanduser("~/.steam/root"), # 最佳：一个指向真实安装目录的符号链接
                 os.path.expanduser("~/.local/share/Steam"), # 官方 .deb 包及多数情况下的默认路径
@@ -1585,10 +1550,9 @@ class DirectoryPage(BasePage):
                         return path
             print("Steam文件夹不存在!")
             return None
-        elif platform.system().lower() == "darwin":
+        elif os_name == "darwin":
             possible_paths = [
-                os.path.expanduser("~/Library/Application Support/Steam"),
-                "/Applications/Steam.app"
+                os.path.expanduser("~/Library/Application Support/Steam")
             ]
             for path in possible_paths:
                 if os.path.exists(path):
@@ -1602,25 +1566,9 @@ class DirectoryPage(BasePage):
 
     def page_shown(self, name:str):
         if name == "directory":
-            text = "所需空间："
-            KB = 1000  # Use 1024 for binary sizes
-            MB = 1000 * 1000
-            GB = 1000 * 1000 * 1000
-            TB = 1000 * 1000 * 1000 * 1000
-        
-            size = self.parent.need_space
-        
-            if size < KB:
-                text += f"{size} B"
-            elif size < MB:
-                text += f"{size / KB:.2f} KB"
-            elif size < GB:
-                text += f"{size / MB:.2f} MB"
-            elif size < TB:
-                text += f"{size / GB:.2f} GB"
-            else:
-                text += f"{size / TB:.2f} TB"
-            self.required_label.setText(text)
+            self.required_label.setText(
+                f"所需空间：{format_size(self.parent.need_space)}"
+            )
 
     def _get_mount_point(self, path):
         """获取路径所在的挂载点（Linux/macOS）"""
@@ -1635,29 +1583,27 @@ class DirectoryPage(BasePage):
 
     def update_disk_space(self):
         path = self.path_input.text()
-        if path and os.path.exists(path):
+        if path:
             try:
-                if platform.system().lower() == "windows":
-                    drive = os.path.splitdrive(path)[0]
-                elif platform.system().lower() == "linux":
-                    drive = self._get_mount_point(path)
-                elif platform.system().lower() == "darwin":
-                    drive = self._get_mount_point(path)
-                else:
-                    return
-                usage = shutil.disk_usage(drive)
-                free_space = usage.free / (1024 * 1024)  # MB
-                if free_space >= 1024:
-                    free_space = free_space / 1024  # GB
-                    self.available_label.setText(f"可用空间: {free_space:.1f} GB")
-                else:
-                    self.available_label.setText(f"可用空间: {free_space:.1f} MB")
+                existing_path = os.path.abspath(path)
+                while not os.path.exists(existing_path):
+                    parent_path = os.path.dirname(existing_path)
+                    if parent_path == existing_path:
+                        raise FileNotFoundError(path)
+                    existing_path = parent_path
+                usage = shutil.disk_usage(existing_path)
+                self.available_label.setText(
+                    f"可用空间: {format_size(usage.free)}"
+                )
+                enough_space = usage.free >= self.parent.need_space
                 self.available_label.setStyleSheet(
                     "color: green; font-size: 9pt; font-weight: bold; margin: 5px;"
-                    if free_space > 15.6
+                    if enough_space
                     else "color: red; font-size: 9pt; font-weight: bold; margin: 5px;"
                 )
-            except:
+                if hasattr(self, "install_button"):
+                    self.install_button.setEnabled(enough_space)
+            except OSError:
                 self.available_label.setText("可用空间: 未知")
                 self.available_label.setStyleSheet("color: palette(mid); font-size: 9pt;")
 
@@ -1683,8 +1629,6 @@ class InstallPage(QWidget):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
-        self.setFixedSize(*WINDOW_SIZE)
-
         # 主布局
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(20, 20, 20, 20)
@@ -1842,7 +1786,6 @@ class InstallerWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(PROGRAM_NAME)
-        self.setFixedSize(*WINDOW_SIZE)
         self.setWindowIcon(QIcon(os.path.join(os.getcwd(), "pack", "icon.ico")))
 
         self.theme_settings = QSettings("Baymaxawa", "UniversalInstaller")
@@ -1850,21 +1793,22 @@ class InstallerWindow(QMainWindow):
         self.theme_mode = saved_theme if saved_theme in THEME_MODES else "system"
         self.setup_theme_menu()
         self.apply_theme_mode()
+        self.setFixedSize(
+            WINDOW_SIZE[0], WINDOW_SIZE[1] + self.menuBar().sizeHint().height()
+        )
 
         style_hints = QApplication.styleHints()
         if hasattr(style_hints, "colorSchemeChanged"):
             style_hints.colorSchemeChanged.connect(self.on_system_theme_changed)
 
-        metadata = get_metadata()
-        if metadata != []:
-            self.default_path = metadata["items"][0]["default_path"]
+        component_metadata = get_metadata()
+        self.default_path = get_default_install_path(
+            component_metadata["items"][MAIN_ITEM]
+        )
 
-        if "need_admin" in get_installer_metadata():
-            if get_installer_metadata()["need_admin"]:
-                # 检查管理员权限
-                if not is_admin():
-                   ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, __file__, None, 1)
-                   sys.exit(0)
+        if INSTALLER_METADATA.get("need_admin") and not is_admin():
+            relaunch_as_admin()
+            sys.exit(0)
 
         # 创建堆栈窗口
         self.stacked_widget = QStackedWidget()
