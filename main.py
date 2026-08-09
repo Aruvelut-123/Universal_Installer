@@ -44,6 +44,12 @@ def is_frozen_application() -> bool:
 
 def resolve_application_directory() -> Path:
     """Locate external assets beside the source file or compiled executable."""
+    appimage = os.environ.get("APPIMAGE")
+    if appimage:
+        appimage_path = Path(appimage).resolve()
+        if appimage_path.is_file():
+            return appimage_path.parent
+
     launch_file = sys.executable if is_frozen_application() else __file__
     directory = Path(launch_file).resolve().parent
     for parent in (directory, *directory.parents):
