@@ -103,7 +103,7 @@ jobs:
             ./dist/uninstall-windows-x86.exe
 
   build_linux:
-    name: Build for Linux (AppImage)
+    name: Build for Linux (binary and AppImage)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v6
@@ -133,7 +133,7 @@ jobs:
         with:
           path: ${{ steps.python-cache.outputs.cache-dir }}
           key: ${{ steps.python-cache.outputs.cache-key }}
-      - name: Build with Nuitka (onefile)
+      - name: Build downloadable binary with Nuitka (onefile)
         run: |
           python -m nuitka \
             --onefile \
@@ -147,19 +147,33 @@ jobs:
           
           # 验证二进制格式；不启动 GUI，避免无显示环境时等待。
           file main.bin
-      - name: Upload binary and signature to Release
+      - name: Upload binary to Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: |
             ./main.bin
+      - name: Build AppImage payload with Nuitka (standalone directory)
+        run: |
+          python -m nuitka \
+            --standalone \
+            --include-module=vdf \
+            --enable-plugin=pyside6 \
+            --assume-yes-for-downloads \
+            --deployment \
+            --output-dir=appimage-main-build \
+            --output-filename=main \
+            main.py
+          test -x appimage-main-build/main.dist/main
+          file appimage-main-build/main.dist/main
       - name: Prepare AppDir
         run: |
           mkdir -p AppDir/usr/bin
           mkdir -p AppDir/usr/lib
-          
-          # 复制主程序（单文件，已经包含 Python）
-          cp main.bin AppDir/usr/bin/main
+
+          # Package the independently built standalone directory. Do not embed
+          # the downloadable onefile binary in the AppImage.
+          cp -a appimage-main-build/main.dist/. AppDir/usr/bin/
           chmod +x AppDir/usr/bin/main
           
           # 复制必要的系统库（仍然需要，因为 Qt 需要）
@@ -180,18 +194,16 @@ jobs:
             find /usr/lib -name "$lib" 2>/dev/null | head -1 | xargs -r cp -t AppDir/usr/lib/ || true
           done
           
-          # 创建 AppRun（简单版，因为 main 已经自包含 Python）
+          # 创建 AppRun
           cat > AppDir/AppRun << 'APPRUNEOF'
           #!/bin/bash
           SELF=$(readlink -f "$0")
           HERE=${SELF%/*}
           
           # 设置库路径（给 Qt 等系统库）
-          export LD_LIBRARY_PATH="$HERE/usr/lib:$LD_LIBRARY_PATH"
-          
-          # Qt 环境变量
-          export QT_PLUGIN_PATH="$HERE/usr/lib/qt5/plugins:$QT_PLUGIN_PATH"
-          export QML_IMPORT_PATH="$HERE/usr/lib/qt5/qml:$QML2_IMPORT_PATH"
+          export LD_LIBRARY_PATH="$HERE/usr/lib:$HERE/usr/bin${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+          # Qt environment variables
           export QT_AUTO_SCREEN_SCALE_FACTOR=0
           export QT_SCALE_FACTOR=1
           
@@ -225,7 +237,7 @@ jobs:
           wget -nv "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage"
           chmod +x appimagetool-x86_64.AppImage
           ARCH=x86_64 ./appimagetool-x86_64.AppImage -v AppDir main.AppImage
-      - name: Upload AppImage and signature to Release
+      - name: Upload AppImage to Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
@@ -280,10 +292,22 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           files: |
             ./uninstall-linux-x64.bin
+      - name: Build uninstaller AppImage payload with Nuitka (standalone directory)
+        run: |
+          python -m nuitka \
+            --standalone \
+            --enable-plugin=pyside6 \
+            --assume-yes-for-downloads \
+            --deployment \
+            --output-dir=appimage-uninstaller-build \
+            --output-filename=uninstaller \
+            uninstaller.py
+          test -x appimage-uninstaller-build/uninstaller.dist/uninstaller
+          file appimage-uninstaller-build/uninstaller.dist/uninstaller
       - name: Prepare uninstaller AppDir
         run: |
           mkdir -p UninstallerAppDir/usr/bin UninstallerAppDir/usr/lib
-          cp uninstall-linux-x64.bin UninstallerAppDir/usr/bin/uninstaller
+          cp -a appimage-uninstaller-build/uninstaller.dist/. UninstallerAppDir/usr/bin/
           chmod +x UninstallerAppDir/usr/bin/uninstaller
 
           LIBRARIES=(
@@ -306,7 +330,7 @@ jobs:
           #!/bin/bash
           SELF=$(readlink -f "$0")
           HERE=${SELF%/*}
-          export LD_LIBRARY_PATH="$HERE/usr/lib:$LD_LIBRARY_PATH"
+          export LD_LIBRARY_PATH="$HERE/usr/lib:$HERE/usr/bin${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           exec "$HERE/usr/bin/uninstaller" "$@"
           APPRUNEOF
           chmod +x UninstallerAppDir/AppRun
