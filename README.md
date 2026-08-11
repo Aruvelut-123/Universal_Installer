@@ -6,8 +6,11 @@
 
 - 按平台和 CPU 架构选择安装包（Windows、Linux、macOS）。
 - 支持必选组件、可选组件和组件依赖关系。
+- 每个含文件的组件具有独立版本号，安装信息会记录组件版本和文件归属。
 - 支持 ZIP、RAR、7z、TAR、TAR.GZ 与 TGZ 压缩包。
 - 自动查找原生 Steam、Wine、Proton、Winlator 与盖世游戏中的游戏目录。
+- 更新已有安装时精确替换所选组件：删除旧版遗留文件、替换变更文件，并通过 SHA-256 跳过内容未变化的文件。
+- 卸载器允许选择组件；卸载依赖时会警告并自动勾选依赖它的组件，共享文件和未选择组件会保留。
 - 安装完成后保存精确文件清单，并提供 Windows、Linux 与 macOS 卸载器；被覆盖的原文件会在卸载时恢复。
 - Windows 会在“程序和功能”中注册卸载项并指向随程序安装的卸载器。
 - 将运行输出和异常分别写入 `logs/` 目录，方便排查问题。
@@ -52,28 +55,36 @@ Windows 安装器虽然是 x86 程序，但会检测操作系统的原生架构�
 | --- | --- |
 | `main.py` | 安装器界面、组件选择、路径检测与文件解压逻辑 |
 | `uninstaller.py` | 安装事务记录、原文件备份、控制面板注册与安全卸载逻辑 |
-| `metadata_example.json` | 程序名称、版本、权限、图片和注册表等全局配置示例 |
-| `pack/items_example.json` | 安装组件、依赖关系、平台文件和目标路径示例 |
+| `metadata.json` | 当前 BB+ 安装器的名称、版本、权限、图片和注册表配置 |
+| `pack/items.json` | 当前 BB+ 组件、版本、依赖、平台文件和目标路径配置 |
+| `metadata_example.json` | 可复用的通用全局配置示例 |
+| `pack/items_example.json` | 可复用的通用组件配置示例 |
 | `requirements.txt` | 运行依赖与可选构建依赖 |
 
-使用前请在本地将示例复制为 `metadata.json` 和 `pack/items.json`。这两个本地配置不会提交到 Git。
+复用本项目时，可将两个示例文件复制为 `metadata.json` 和 `pack/items.json`，再替换示例值。当前仓库同时跟踪 BB+ 的生产配置。
 
-`pack/items.json` 中每个组件必须具有唯一的 `id`。`dependencies` 中的每个值都必须引用已存在的组件 ID；`files` 和平台文件列表里的每个文件也必须在 `actions` 中配置目标路径。
+`pack/items.json` 顶层使用 `components`。每个组件必须具有唯一的 `component_id`；`dependencies` 中的每个值都必须引用已存在的组件 ID。含文件的组件必须提供非空 `version`，只用于分组且没有文件的组件可省略版本。`common_files` 和平台文件列表里的每个文件也必须在 `destinations` 中配置目标路径。
 
-顶层 `uninstaller` 对象分别配置 Windows、Linux 和 macOS 的卸载器包。其中 `file` 是随安装组件分发的源文件，`executable` 是安装完成后的可执行文件相对路径。卸载器必须放入必选组件对应的平台文件列表，并在 `actions` 中安装到 `{install_path}`。
+顶层 `uninstaller` 对象分别配置 Windows、Linux 和 macOS 的卸载器包。其中 `source_file` 是随组件分发的源文件，`installed_executable` 是安装完成后的可执行文件相对路径。卸载器必须放入必选组件对应的平台文件列表，并在 `destinations` 中安装到 `{install_path}`。生产配置让 `main` 核心拥有卸载器，因此移除核心时也会移除卸载器和 Windows 注册表项；BepInEx 由独立组件拥有并会保留。
 
-`metadata.json` 中的 `registry_key` 与 `uninstall_registry_key` 是可复用安装器时必须自行设置的完整注册表路径，均位于 `Software\...` 下。安装完成后，文件清单与原文件备份索引保存在 `{install_path}/.universal_installer/install_info.uim`；它是带版本标识并使用 zlib 压缩的专用二进制格式，不是明文 JSON。
+`metadata.json` 中的 `product_registry_key` 与 `uninstall_registry_key` 是可复用安装器时必须自行设置的完整注册表路径，均位于 `Software\...` 下。`core_component_index` 指定核心组件：移除它会删除 Windows 产品与卸载注册项，即使其他独立组件仍然保留。安装完成后，组件版本、依赖、文件 SHA-256、文件归属和原文件备份索引保存在 `{install_path}/.universal_installer/install_info.uim`；它是带版本标识并使用 zlib 压缩的专用二进制格式，不是明文 JSON。
+
+组件可使用 `remove_directories_on_uninstall` 指定卸载该组件时需递归清理的生成目录，例如 `"{install_path}/plugins/application-core"`。路径必须严格位于安装目录内，不能指向安装根目录、安装信息目录或通过链接逃逸；目录内未由安装器记录的文件也会删除，因此只应配置该组件独占的目录。
 
 目标路径可以使用 `{install_path}` 占位符，例如：
 
 ```json
 {
-  "files": ["pack/Example.zip"],
-  "actions": {
-    "pack/Example.zip": "{install_path}/BepInEx/plugins"
-  }
+    "common_files": [
+        "pack/Example.zip"
+    ],
+    "destinations": {
+        "pack/Example.zip": "{install_path}/BepInEx/plugins"
+    }
 }
 ```
+
+旧版键名（如 `items`、`id`、`name`、`files`、`actions`）仍可读取，以便旧安装包平滑迁移；新配置应使用示例中的可读键名。
 
 ## 自动构建
 
