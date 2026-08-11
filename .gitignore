@@ -5,7 +5,6 @@
 pack/*
 !pack/items_example.json
 !pack/items.json
-/metadata.json
 MOD
 *.zip
 test.py
