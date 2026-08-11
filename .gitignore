@@ -1,9 +1,10 @@
 .venv
 .stfolder
 .idea
-# Keep local installer payload/configuration private while tracking its example.
+# Track component configuration while keeping installer payloads private.
 pack/*
 !pack/items_example.json
+!pack/items.json
 /metadata.json
 MOD
 *.zip
@@ -13,3 +14,6 @@ build.py
 *.exe
 *.AppImage
 *.app
+__pycache__/
+*.py[cod]
+testaudios/
