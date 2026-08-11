@@ -30,6 +30,9 @@ class ComponentUninstallTests(unittest.TestCase):
             {
                 "id": "core", "name": "BBPC", "version": "1.18.4",
                 "dependencies": ["runtime"], "required": True,
+                "remove_directories_on_uninstall": [
+                    "{install_path}/BBPC-generated"
+                ],
             },
             {
                 "id": "api", "name": "Dev API", "version": "11.1.0.2",
@@ -63,7 +66,7 @@ class ComponentUninstallTests(unittest.TestCase):
                 },
                 {
                     "path": "uninstall.AppImage", "backup": None,
-                    "components": ["runtime"],
+                    "components": ["core"],
                 },
             ],
             "created_directories": ["BepInEx", "BepInEx/core", "BepInEx/plugins"],
@@ -73,6 +76,9 @@ class ComponentUninstallTests(unittest.TestCase):
             },
         }
         uninstaller._atomic_write_manifest(manifest_path, manifest)
+        generated = root / "BBPC-generated"
+        generated.mkdir()
+        (generated / "untracked.cache").write_bytes(b"generated")
         return temporary, root, manifest_path, manifest
 
     def test_dependency_selection_includes_transitive_dependents(self):
@@ -90,13 +96,19 @@ class ComponentUninstallTests(unittest.TestCase):
     def test_core_uninstall_keeps_runtime_mods_and_removes_registry(self):
         temporary, root, manifest_path, manifest = self.make_installation()
         self.addCleanup(temporary.cleanup)
-        with mock.patch.object(uninstaller, "remove_windows_uninstall_entry") as remove:
-            errors, deferred = uninstaller.uninstall(
-                manifest_path, manifest, {"core"}
-            )
+        running_uninstaller = root / "uninstall.AppImage"
+        with mock.patch.object(
+            uninstaller, "remove_windows_uninstall_entry"
+        ) as remove, mock.patch.object(
+                uninstaller,
+                "_current_uninstaller_container",
+                return_value=running_uninstaller,
+        ):
+            errors, deferred = uninstaller.uninstall(manifest_path, manifest, {"core"})
         self.assertEqual(errors, [])
-        self.assertIsNone(deferred)
+        self.assertEqual(deferred, running_uninstaller)
         self.assertFalse((root / "bbpc.dll").exists())
+        self.assertFalse((root / "BBPC-generated").exists())
         self.assertTrue((root / "BepInEx/core/runtime.dll").is_file())
         self.assertTrue((root / "BepInEx/plugins/mod.dll").is_file())
         self.assertTrue((root / "shared.dll").is_file())
@@ -107,6 +119,9 @@ class ComponentUninstallTests(unittest.TestCase):
         self.assertIsNone(updated["windows_registry"])
         shared = next(entry for entry in updated["files"] if entry["path"] == "shared.dll")
         self.assertEqual(shared["components"], ["api"])
+        self.assertNotIn(
+            "uninstall.AppImage", {entry["path"] for entry in updated["files"]}
+        )
 
     def test_partial_uninstall_keeps_registry_when_core_remains(self):
         temporary, root, manifest_path, manifest = self.make_installation()
@@ -119,6 +134,15 @@ class ComponentUninstallTests(unittest.TestCase):
         remove.assert_not_called()
         _, updated = uninstaller.load_manifest(manifest_path)
         self.assertEqual(updated["windows_registry"], manifest["windows_registry"])
+
+    def test_configured_uninstall_directories_cannot_escape_install_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "install"
+            root.mkdir()
+            with self.assertRaises(ValueError):
+                uninstaller._resolve_uninstall_directory(root, "../outside")
+            with self.assertRaises(ValueError):
+                uninstaller._resolve_uninstall_directory(root, "{install_path}")
 
 
 class ManifestRecordingTests(unittest.TestCase):

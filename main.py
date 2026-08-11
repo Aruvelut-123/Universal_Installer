@@ -432,6 +432,31 @@ def get_metadata() -> dict:
                 raise ValueError(f"组件 {component_id} 的 {key} 必须是字符串数组或 null")
         if item.get("actions") is not None and not isinstance(item["actions"], dict):
             raise ValueError(f"组件 {component_id} 的 actions 必须是对象或 null")
+        uninstall_directories = item.get("remove_directories_on_uninstall", [])
+        if not isinstance(uninstall_directories, list) or any(
+            not isinstance(value, str) or not value.strip()
+            for value in uninstall_directories
+        ):
+            raise ValueError(
+                f"组件 {component_id} 的 remove_directories_on_uninstall "
+                "必须是非空字符串数组"
+            )
+        for value in uninstall_directories:
+            normalized = value.replace("\\", "/")
+            without_placeholder = normalized.replace("{install_path}", "")
+            parts = [part for part in without_placeholder.split("/") if part]
+            if (
+                ".." in parts
+                or not parts
+                or (
+                    "{install_path}" not in normalized
+                    and (normalized.startswith("/") or re.match(r"^[A-Za-z]:", normalized))
+                )
+            ):
+                raise ValueError(
+                    f"组件 {component_id} 的卸载目录必须是安装目录内的相对路径: "
+                    f"{value}"
+                )
         missing_dependencies = set(item.get("dependencies", [])) - known_ids
         if missing_dependencies:
             raise ValueError(

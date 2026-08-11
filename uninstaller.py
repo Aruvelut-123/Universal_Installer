@@ -93,6 +93,11 @@ def _manifest_components(manifest):
                     if isinstance(value, str)
                 ],
                 "required": bool(record.get("required", False)),
+                "remove_directories_on_uninstall": [
+                    value for value in record.get(
+                        "remove_directories_on_uninstall", []
+                    ) if isinstance(value, str)
+                ],
             })
         if normalized:
             return normalized
@@ -102,6 +107,7 @@ def _manifest_components(manifest):
             "name": component_id,
             "dependencies": [],
             "required": False,
+            "remove_directories_on_uninstall": [],
         }
         for component_id in manifest.get("selected_components", [])
         if isinstance(component_id, str)
@@ -153,6 +159,9 @@ class InstallRecorder:
                     "version": component.get("version"),
                     "dependencies": list(component.get("dependencies", [])),
                     "required": bool(component.get("required", False)),
+                    "remove_directories_on_uninstall": list(
+                        component.get("remove_directories_on_uninstall", [])
+                    ),
                 })
             else:
                 self.components.append({
@@ -161,6 +170,7 @@ class InstallRecorder:
                     "version": None,
                     "dependencies": [],
                     "required": False,
+                    "remove_directories_on_uninstall": [],
                 })
         self.component_ids = [component["id"] for component in self.components]
         self.core_component = core_component or (
@@ -620,6 +630,27 @@ def _current_uninstaller_container(install_root):
     return executable
 
 
+def _resolve_uninstall_directory(install_root, configured_path):
+    root = Path(install_root).absolute()
+    value = configured_path.replace("{install_path}", str(root))
+    value = value.replace("\\", os.sep).replace("/", os.sep)
+    path = Path(value)
+    if not path.is_absolute():
+        path = root / path
+    path = Path(os.path.abspath(str(path)))
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        raise ValueError("拒绝删除安装目录之外的目录: {}".format(path))
+    if not relative.parts or relative.parts[0] == INSTALL_DATA_DIRECTORY:
+        raise ValueError("拒绝删除安装根目录或安装信息目录: {}".format(path))
+    try:
+        path.parent.resolve().relative_to(root.resolve())
+    except ValueError:
+        raise ValueError("卸载目录通过链接指向安装目录之外: {}".format(path))
+    return path
+
+
 def uninstall(manifest_path, manifest, selected_components=None):
     install_root = Path(manifest["install_root"]).resolve()
     data_directory = install_root / INSTALL_DATA_DIRECTORY
@@ -647,6 +678,7 @@ def uninstall(manifest_path, manifest, selected_components=None):
     legacy_owners = [component["id"] for component in components]
     retained_entries = []
     removed_backups = []
+    deferred_removal_requested = False
 
     entries = [entry for entry in manifest.get("files", []) if isinstance(entry, dict)]
     entries.sort(key=lambda entry: len(Path(entry.get("path", "")).parts), reverse=True)
@@ -673,14 +705,10 @@ def uninstall(manifest_path, manifest, selected_components=None):
         except ValueError:
             errors.append("拒绝删除安装目录之外的路径: {}".format(target))
             continue
-        if (
-            remaining_ids
-            and deferred is not None
-            and (target == deferred or _is_relative_to(target, deferred))
+        if deferred is not None and (
+            target == deferred or _is_relative_to(target, deferred)
         ):
-            retained = dict(entry)
-            retained["components"] = sorted(remaining_ids)
-            retained_entries.append(retained)
+            deferred_removal_requested = True
             continue
         try:
             if target.is_symlink() or target.is_file():
@@ -698,6 +726,36 @@ def uninstall(manifest_path, manifest, selected_components=None):
                 removed_backups.append(backup_path)
         except (OSError, ValueError) as error:
             errors.append("{}: {}".format(target, error))
+
+    if not errors:
+        configured_directories = {
+            value
+            for component in components
+            if component["id"] in selected
+            for value in component.get("remove_directories_on_uninstall", [])
+        }
+        resolved_directories = []
+        for configured_path in configured_directories:
+            try:
+                resolved_directories.append(
+                    _resolve_uninstall_directory(install_root, configured_path)
+                )
+            except ValueError as error:
+                errors.append(str(error))
+        for directory in sorted(
+            resolved_directories,
+            key=lambda value: len(value.parts),
+            reverse=True,
+        ):
+            try:
+                if directory.is_symlink():
+                    directory.unlink()
+                elif directory.is_dir():
+                    shutil.rmtree(str(directory))
+                elif directory.exists():
+                    raise OSError("卸载目录目标不是目录")
+            except OSError as error:
+                errors.append("{}: {}".format(directory, error))
 
     if not remaining_ids:
         for relative in sorted(
@@ -750,7 +808,7 @@ def uninstall(manifest_path, manifest, selected_components=None):
                     pass
         except OSError as error:
             errors.append("无法更新安装信息: {}".format(error))
-        return errors, None
+        return errors, deferred if deferred_removal_requested else None
 
     try:
         shutil.rmtree(str(data_directory))
@@ -883,7 +941,8 @@ def run_gui(manifest_path, manifest):
     buttons.accepted.connect(dialog.accept)
     buttons.rejected.connect(dialog.reject)
     layout.addWidget(buttons)
-    if dialog.exec() != QDialog.Accepted:
+    execute_dialog = getattr(dialog, "exec", None) or dialog.exec_
+    if execute_dialog() != QDialog.Accepted:
         return 0
 
     selected = selected_component_ids()
