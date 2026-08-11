@@ -25,6 +25,11 @@ import traceback
 from typing import Any
 
 from linux_display import configure_linux_qt_platform
+from windows_style import (
+    apply_windows_window_effects,
+    configure_windows_qt_style,
+    windows_style_profile,
+)
 
 configure_linux_qt_platform()
 
@@ -178,8 +183,8 @@ try:
         QLineEdit, QFileDialog, QProgressBar, QGroupBox, QFrame, QMessageBox,
         QTreeWidget, QTreeWidgetItem,
     )
-    from PySide6.QtGui import QColor, QFont, QIcon, QPalette, QPixmap
-    from PySide6.QtCore import Qt, QThread, Signal
+    from PySide6.QtGui import QFontDatabase, QIcon, QPixmap
+    from PySide6.QtCore import Qt, QThread, QTimer, Signal
     QT_BINDING = "PySide6"
 except ImportError:
     from PySide2.QtWidgets import (
@@ -188,8 +193,8 @@ except ImportError:
         QLineEdit, QFileDialog, QProgressBar, QGroupBox, QFrame, QMessageBox,
         QTreeWidget, QTreeWidgetItem,
     )
-    from PySide2.QtGui import QColor, QFont, QIcon, QPalette, QPixmap
-    from PySide2.QtCore import Qt, QThread, Signal
+    from PySide2.QtGui import QFontDatabase, QIcon, QPixmap
+    from PySide2.QtCore import Qt, QThread, QTimer, Signal
     QT_BINDING = "PySide2"
 
 print(f"Qt binding: {QT_BINDING}")
@@ -575,44 +580,6 @@ def get_uninstaller_ui_configuration():
         "assets": assets,
     }
 
-THEME_COLORS = {
-    "light": {
-        "window": "#F5F5F5",
-        "base": "#FFFFFF",
-        "alternate": "#F0F0F0",
-        "text": "#202020",
-        "muted": "#666666",
-        "border": "#C8C8C8",
-        "button": "#F1F1F1",
-        "button_hover": "#E5E5E5",
-        "button_pressed": "#D9D9D9",
-        "disabled": "#A0A0A0",
-        "highlight": "#4BA348",
-        "highlight_hover": "#3D8C39",
-        "highlight_pressed": "#2D6C29",
-        "highlight_text": "#FFFFFF",
-        "log_background": "#FAFAFA",
-    },
-    "dark": {
-        "window": "#202124",
-        "base": "#292A2D",
-        "alternate": "#303134",
-        "text": "#F1F3F4",
-        "muted": "#B0B3B8",
-        "border": "#5F6368",
-        "button": "#35363A",
-        "button_hover": "#45464B",
-        "button_pressed": "#2A2B2E",
-        "disabled": "#80868B",
-        "highlight": "#57B957",
-        "highlight_hover": "#66C766",
-        "highlight_pressed": "#3F9340",
-        "highlight_text": "#FFFFFF",
-        "log_background": "#17181A",
-    },
-}
-
-
 def get_system_theme() -> str:
     """Return the OS application theme, with a Windows registry fallback."""
     app = QApplication.instance()
@@ -639,122 +606,14 @@ def get_system_theme() -> str:
     return "light"
 
 
-def create_theme_palette(theme: str) -> QPalette:
-    """Build a complete Qt palette for the requested theme."""
-    colors = THEME_COLORS[theme]
-    palette = QPalette()
-    roles = {
-        QPalette.Window: "window",
-        QPalette.WindowText: "text",
-        QPalette.Base: "base",
-        QPalette.AlternateBase: "alternate",
-        QPalette.ToolTipBase: "base",
-        QPalette.ToolTipText: "text",
-        QPalette.Text: "text",
-        QPalette.Button: "button",
-        QPalette.ButtonText: "text",
-        QPalette.BrightText: "highlight_text",
-        QPalette.Link: "highlight",
-        QPalette.Highlight: "highlight",
-        QPalette.HighlightedText: "highlight_text",
-        QPalette.PlaceholderText: "muted",
-    }
-    for role, color_name in roles.items():
-        palette.setColor(role, QColor(colors[color_name]))
-    palette.setColor(
-        QPalette.Disabled,
-        QPalette.Text,
-        QColor(colors["disabled"]),
-    )
-    palette.setColor(
-        QPalette.Disabled,
-        QPalette.ButtonText,
-        QColor(colors["disabled"]),
-    )
-    return palette
-
-
-def create_theme_stylesheet(theme: str) -> str:
-    """Return palette-aware QSS without hard-coded light-only widget styles."""
-    color = THEME_COLORS[theme]
-    return f"""
-        QMainWindow, QWidget {{
-            background-color: {color['window']};
-            color: {color['text']};
-        }}
-        QGroupBox {{
-            border: 1px solid {color['border']};
-            border-radius: 4px;
-            margin-top: 8px;
-            padding-top: 8px;
-        }}
-        QGroupBox::title {{
-            subcontrol-origin: margin;
-            left: 8px;
-            padding: 0 4px;
-        }}
-        QLineEdit, QTextEdit, QTreeWidget {{
-            background-color: {color['base']};
-            color: {color['text']};
-            border: 1px solid {color['border']};
-            border-radius: 3px;
-            selection-background-color: {color['highlight']};
-            selection-color: {color['highlight_text']};
-        }}
-        QPushButton {{
-            background-color: {color['button']};
-            color: {color['text']};
-            border: 1px solid {color['border']};
-            border-radius: 3px;
-            padding: 5px 15px;
-        }}
-        QPushButton:hover {{ background-color: {color['button_hover']}; }}
-        QPushButton:pressed {{ background-color: {color['button_pressed']}; }}
-        QPushButton:disabled {{ color: {color['disabled']}; }}
-        QPushButton[buttonStyle="primary"] {{
-            background-color: {color['highlight']};
-            color: {color['highlight_text']};
-            border-color: {color['highlight_pressed']};
-        }}
-        QPushButton[buttonStyle="primary"]:hover {{
-            background-color: {color['highlight_hover']};
-        }}
-        QPushButton[buttonStyle="primary"]:pressed {{
-            background-color: {color['highlight_pressed']};
-        }}
-        QProgressBar {{
-            background-color: {color['base']};
-            color: {color['text']};
-            border: 1px solid {color['border']};
-            border-radius: 5px;
-            text-align: center;
-        }}
-        QProgressBar::chunk {{ background-color: {color['highlight']}; }}
-        QTextEdit[logView="true"] {{
-            background-color: {color['log_background']};
-            color: {color['text']};
-        }}
-        QLabel[muted="true"] {{ color: {color['muted']}; }}
-        QMenuBar, QMenu {{
-            background-color: {color['window']};
-            color: {color['text']};
-        }}
-        QMenuBar::item:selected, QMenu::item:selected {{
-            background-color: {color['highlight']};
-            color: {color['highlight_text']};
-        }}
-    """
-
-
 def apply_application_theme(theme: str) -> None:
-    """Apply a theme to the active application and all existing widgets."""
-    if theme not in THEME_COLORS:
-        raise ValueError(f"未知主题: {theme}")
+    """Retain the host platform palette and native Qt control style."""
     app = QApplication.instance()
     if app is None:
         raise RuntimeError("QApplication 尚未创建")
-    app.setPalette(create_theme_palette(theme))
-    app.setStyleSheet(create_theme_stylesheet(theme))
+    app.setStyleSheet("")
+    if platform.system().lower() == "windows":
+        configure_windows_qt_style(app)
 
 
 def get_application_icon() -> QIcon:
@@ -1522,14 +1381,14 @@ class BasePage(QWidget):
 
         # 添加标题
         self.title_label = QLabel()
-        title_font = QFont("Microsoft YaHei UI", 12, QFont.Bold)
+        title_font = self.title_label.font()
+        title_font.setPointSize(max(12, title_font.pointSize() + 3))
+        title_font.setBold(True)
         self.title_label.setFont(title_font)
         self.title_label.setAlignment(Qt.AlignCenter)
 
         # 副标题
         self.subtitle_label = QLabel()
-        subtitle_font = QFont("Microsoft YaHei UI", 9)
-        self.subtitle_label.setFont(subtitle_font)
         self.subtitle_label.setAlignment(Qt.AlignCenter)
         self.subtitle_label.setWordWrap(True)
 
@@ -1554,9 +1413,9 @@ class BasePage(QWidget):
 
         # 底部信息
         self.footer_label = QLabel(get_installer_metadata()["footer_info"])
-        footer_font = QFont("Microsoft YaHei UI", 8)
+        footer_font = self.footer_label.font()
+        footer_font.setPointSize(max(8, footer_font.pointSize() - 1))
         self.footer_label.setFont(footer_font)
-        self.footer_label.setProperty("muted", True)
         self.footer_label.setAlignment(Qt.AlignCenter)
 
         # 添加到布局
@@ -1579,12 +1438,9 @@ class BasePage(QWidget):
 
     def add_button(self, text, callback, style="default"):
         button = QPushButton(text)
-        button_font = QFont("Microsoft YaHei UI", 9)
-        button.setFont(button_font)
         button.setMinimumSize(100, 30)
-
         if style == "primary":
-            button.setProperty("buttonStyle", "primary")
+            button.setDefault(True)
 
         button.clicked.connect(callback)
         self.button_layout.addWidget(button)
@@ -1608,7 +1464,6 @@ class WelcomePage(BasePage):
         content_text += "点击[下一步(N)]继续。"
 
         content_label = QLabel(content_text)
-        content_label.setFont(QFont("Microsoft YaHei UI", 9))
         content_label.setAlignment(Qt.AlignCenter)
         content_label.setWordWrap(True)
 
@@ -1635,7 +1490,6 @@ class LicensePage(BasePage):
 
         # 创建许可证文本框
         license_group = QGroupBox("许可证协议")
-        license_group.setStyleSheet("QGroupBox { font-weight: bold; }")
         license_layout = QVBoxLayout(license_group)
 
         self.license_text = QTextEdit()
@@ -1648,12 +1502,9 @@ class LicensePage(BasePage):
 
         # 添加提示文本
         tip_label = QLabel("要阅读协议的其余部分，请使用滚动条浏览。")
-        tip_label.setStyleSheet("font-size: 9pt;")
-        tip_label.setProperty("muted", True)
 
         # 添加协议接受选项
         self.agree_checkbox = QCheckBox("我接受许可证的条款")
-        self.agree_checkbox.setStyleSheet("font-size: 9pt;")
 
         license_layout.addWidget(self.license_text)
         license_layout.addWidget(tip_label)
@@ -1697,7 +1548,6 @@ class ComponentsPage(BasePage):
         left_layout = QVBoxLayout(left_widget)
 
         tip_label = QLabel("请勾选你想安装的组件，并取消勾选你不想安装的组件。")
-        tip_label.setStyleSheet("font-size: 9pt; margin-bottom: 10px;")
 
         self.components_list = QTreeWidget()
         self.components_list.setSelectionMode(QAbstractItemView.MultiSelection)
@@ -1786,7 +1636,6 @@ class ComponentsPage(BasePage):
 
         # 空间信息
         self.space_label = QLabel("所需空间: 0 MB")
-        self.space_label.setStyleSheet("font-size: 9pt; font-weight: bold; margin-top: 10px;")
 
         left_layout.addWidget(tip_label)
         left_layout.addWidget(self.components_list)
@@ -1797,7 +1646,6 @@ class ComponentsPage(BasePage):
         right_layout = QVBoxLayout(right_widget)
 
         desc_label = QLabel("组件描述")
-        desc_label.setStyleSheet("font-size: 9pt; font-weight: bold; margin-bottom: 10px;")
 
         self.description_text = QTextEdit()
         self.description_text.setReadOnly(True)
@@ -2099,7 +1947,6 @@ class DirectoryPage(BasePage):
         if "select_directory_tip" in get_installer_metadata():
             # 添加提示文本
             tip_label = QLabel(get_installer_metadata()["select_directory_tip"])
-            tip_label.setStyleSheet("font-size: 9pt; color: #4BA348; margin-bottom: 10px;")
             path_layout.addWidget(tip_label)
 
         
@@ -2135,10 +1982,8 @@ class DirectoryPage(BasePage):
         self.space_layout.addStretch(1)
 
         self.required_label = QLabel("所需空间: 0 KB")
-        self.required_label.setStyleSheet("font-size: 9pt; margin: 5px;")
 
         self.available_label = QLabel()
-        self.available_label.setStyleSheet("font-size: 9pt; font-weight: bold; margin: 5px;")
 
         self.space_layout.addWidget(self.required_label)
         self.space_layout.addWidget(self.available_label)
@@ -2339,16 +2184,14 @@ class DirectoryPage(BasePage):
                     f"可用空间: {format_size(usage.free)}"
                 )
                 enough_space = usage.free >= self.parent.need_space
-                self.available_label.setStyleSheet(
-                    "color: green; font-size: 9pt; font-weight: bold; margin: 5px;"
-                    if enough_space
-                    else "color: red; font-size: 9pt; font-weight: bold; margin: 5px;"
-                )
+                if not enough_space:
+                    self.available_label.setText(
+                        f"可用空间: {format_size(usage.free)}（空间不足）"
+                    )
                 if hasattr(self, "next_button"):
                     self.next_button.setEnabled(enough_space)
             except OSError:
                 self.available_label.setText("可用空间: 未知")
-                self.available_label.setStyleSheet("color: palette(mid); font-size: 9pt;")
 
     def has_sufficient_space(self, required_space):
         path = self.path_input.text().strip()
@@ -2408,14 +2251,15 @@ class InstallPage(QWidget):
 
         # 标题
         title_label = QLabel(get_installer_metadata()["short_name"]+"安装")
-        title_font = QFont("Microsoft YaHei UI", 12, QFont.Bold)
+        title_font = title_label.font()
+        title_font.setPointSize(max(12, title_font.pointSize() + 3))
+        title_font.setBold(True)
         title_label.setFont(title_font)
         title_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(title_label)
 
         # 副标题
         subtitle_label = QLabel("正在安装 "+get_installer_metadata()["short_name"]+" ，请稍候...")
-        subtitle_label.setFont(QFont("Microsoft YaHei UI", 10))
         subtitle_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(subtitle_label)
 
@@ -2431,8 +2275,9 @@ class InstallPage(QWidget):
 
         self.log_area = QTextEdit()
         self.log_area.setReadOnly(True)
-        self.log_area.setFont(QFont("Consolas", 9))
-        self.log_area.setProperty("logView", True)
+        self.log_area.setFont(
+            QFontDatabase.systemFont(QFontDatabase.FixedFont)
+        )
 
         logs_layout.addWidget(self.log_area)
         main_layout.addWidget(logs_group)
@@ -2443,7 +2288,6 @@ class InstallPage(QWidget):
 
         # 显示详情按钮
         self.details_button = QPushButton("隐藏详情(D)")
-        self.details_button.setFont(QFont("Microsoft YaHei UI", 9))
         self.details_button.clicked.connect(self.toggle_details)
         self.button_layout.addWidget(self.details_button)
 
@@ -2455,8 +2299,9 @@ class InstallPage(QWidget):
 
         # 底部信息
         footer_label = QLabel(get_installer_metadata()["footer_info"])
-        footer_label.setFont(QFont("Microsoft YaHei UI", 8))
-        footer_label.setProperty("muted", True)
+        footer_font = footer_label.font()
+        footer_font.setPointSize(max(8, footer_font.pointSize() - 1))
+        footer_label.setFont(footer_font)
         footer_label.setAlignment(Qt.AlignCenter)
         main_layout.addWidget(footer_label)
 
@@ -2465,12 +2310,9 @@ class InstallPage(QWidget):
 
     def add_button(self, text, callback, style="default"):
         button = QPushButton(text)
-        button_font = QFont("Microsoft YaHei UI", 9)
-        button.setFont(button_font)
         button.setMinimumSize(100, 30)
-
         if style == "primary":
-            button.setProperty("buttonStyle", "primary")
+            button.setDefault(True)
 
         button.clicked.connect(callback)
         self.button_layout.addWidget(button)
@@ -2523,7 +2365,9 @@ class FinishPage(BasePage):
 
         # 添加结果消息
         self.result_label = QLabel(get_installer_metadata()["short_name"]+" 已经成功安装到本机。")
-        self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #4BA348;")
+        result_font = self.result_label.font()
+        result_font.setBold(True)
+        self.result_label.setFont(result_font)
         self.result_label.setAlignment(Qt.AlignCenter)
 
         # 添加提示文本
@@ -2542,11 +2386,9 @@ class FinishPage(BasePage):
         if success:
             self.subtitle_label.setText("安装完成!")
             self.result_label.setText(get_installer_metadata()["short_name"]+" 已经成功安装到本机。")
-            self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #4BA348;")
         else:
             self.subtitle_label.setText("安装失败")
             self.result_label.setText("安装失败，请检查错误信息后重试。")
-            self.result_label.setStyleSheet("font-size: 10pt; font-weight: bold; color: #FF0000;")
 
     def on_finish(self):
         self.parent.close()
@@ -2606,9 +2448,19 @@ class InstallerWindow(QMainWindow):
 
         # 设置当前页面
         self.go_to_page("welcome")
+        self.windows_style_profile = windows_style_profile()
+        QTimer.singleShot(0, self.apply_native_windows_effects)
+
+    def apply_native_windows_effects(self):
+        apply_windows_window_effects(
+            self,
+            get_system_theme(),
+            self.windows_style_profile,
+        )
 
     def on_system_theme_changed(self, _color_scheme):
         apply_application_theme(get_system_theme())
+        self.apply_native_windows_effects()
 
     def go_to_page(self, page_name):
         self.page_shown.emit(page_name)
@@ -2658,11 +2510,6 @@ def main():
     app.setApplicationVersion(VERSION)
     app.setOrganizationName(INSTALLER_METADATA["author"])
     app.setWindowIcon(get_application_icon())
-    app.setStyle("Fusion")
-
-    # 设置应用程序字体
-    font = QFont("Microsoft YaHei UI", 9)
-    app.setFont(font)
 
     window = InstallerWindow()
     window.show()

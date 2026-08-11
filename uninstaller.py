@@ -15,6 +15,12 @@ from datetime import datetime
 from pathlib import Path
 
 from linux_display import configure_linux_qt_platform
+from windows_style import (
+    apply_windows_window_effects,
+    configure_windows_qt_style,
+    windows_app_theme,
+    windows_style_profile,
+)
 
 configure_linux_qt_platform()
 
@@ -943,7 +949,7 @@ def create_uninstaller_window(manifest_path, manifest):
     """Create the branded wizard window; the caller owns the QApplication."""
     try:
         from PySide6.QtCore import Qt, QThread, Signal, QTimer
-        from PySide6.QtGui import QFont, QIcon, QPixmap
+        from PySide6.QtGui import QIcon, QPixmap
         from PySide6.QtWidgets import (
             QApplication, QCheckBox, QFrame, QGroupBox, QHBoxLayout, QLabel,
             QMainWindow, QMessageBox, QProgressBar, QPushButton, QStackedWidget,
@@ -951,7 +957,7 @@ def create_uninstaller_window(manifest_path, manifest):
         )
     except ImportError:
         from PySide2.QtCore import Qt, QThread, Signal, QTimer
-        from PySide2.QtGui import QFont, QIcon, QPixmap
+        from PySide2.QtGui import QIcon, QPixmap
         from PySide2.QtWidgets import (
             QApplication, QCheckBox, QFrame, QGroupBox, QHBoxLayout, QLabel,
             QMainWindow, QMessageBox, QProgressBar, QPushButton, QStackedWidget,
@@ -1015,19 +1021,16 @@ def create_uninstaller_window(manifest_path, manifest):
                 self.stacked.addWidget(page)
             self.apply_style()
             self.go_to_page("welcome")
+            QTimer.singleShot(0, self.apply_native_windows_effects)
 
         def apply_style(self):
-            self.setStyleSheet("""
-                QMainWindow, QWidget { font-family: "Microsoft YaHei UI", sans-serif; }
-                QGroupBox { font-weight: bold; margin-top: 8px; }
-                QGroupBox::title { subcontrol-origin: margin; left: 8px; }
-                QPushButton { min-width: 100px; min-height: 30px; padding: 2px 10px; }
-                QPushButton[primary="true"] { background: #4BA348; color: white; border: 1px solid #3D8C39; }
-                QPushButton[primary="true"]:hover { background: #3D8C39; }
-                QTextEdit, QTreeWidget { border: 1px solid palette(mid); }
-                QProgressBar { min-height: 20px; text-align: center; }
-                QProgressBar::chunk { background: #4BA348; }
-            """)
+            self.windows_style_profile = windows_style_profile()
+            self.windows_theme = windows_app_theme()
+
+        def apply_native_windows_effects(self):
+            apply_windows_window_effects(
+                self, self.windows_theme, self.windows_style_profile
+            )
 
         def page_shell(self, title, subtitle, include_header=True):
             page = QWidget()
@@ -1045,7 +1048,10 @@ def create_uninstaller_window(manifest_path, manifest):
                     header.setAlignment(Qt.AlignCenter)
                     layout.addWidget(header)
             title_label = QLabel(title)
-            title_label.setFont(QFont("Microsoft YaHei UI", 14, QFont.Bold))
+            title_font = title_label.font()
+            title_font.setPointSize(max(14, title_font.pointSize() + 4))
+            title_font.setBold(True)
+            title_label.setFont(title_font)
             title_label.setAlignment(Qt.AlignCenter)
             subtitle_label = QLabel(subtitle)
             subtitle_label.setWordWrap(True)
@@ -1059,15 +1065,18 @@ def create_uninstaller_window(manifest_path, manifest):
             layout.addLayout(button_layout)
             footer = QLabel(footer_text)
             footer.setAlignment(Qt.AlignCenter)
-            footer.setStyleSheet("color: palette(mid); font-size: 8pt;")
+            footer_font = footer.font()
+            footer_font.setPointSize(max(8, footer_font.pointSize() - 1))
+            footer.setFont(footer_font)
             layout.addWidget(footer)
             return page, content_layout, button_layout
 
         @staticmethod
         def add_button(layout, text, callback, primary=False):
             button = QPushButton(text)
+            button.setMinimumSize(100, 30)
             if primary:
-                button.setProperty("primary", True)
+                button.setDefault(True)
             button.clicked.connect(callback)
             layout.addWidget(button)
             return button
@@ -1198,7 +1207,9 @@ def create_uninstaller_window(manifest_path, manifest):
             self.finish_message = QLabel()
             self.finish_message.setWordWrap(True)
             self.finish_message.setAlignment(Qt.AlignCenter)
-            self.finish_message.setFont(QFont("Microsoft YaHei UI", 10, QFont.Bold))
+            finish_font = self.finish_message.font()
+            finish_font.setBold(True)
+            self.finish_message.setFont(finish_font)
             content.addStretch(1)
             content.addWidget(self.finish_message)
             content.addStretch(1)
@@ -1306,20 +1317,16 @@ def create_uninstaller_window(manifest_path, manifest):
                         "\n".join(errors[:10])
                     )
                 )
-                self.finish_message.setStyleSheet("color: #C62828;")
             elif core_component in self.selected_components:
                 self.finish_message.setText(
                     "核心组件和安装器记录已删除。未选择的 BepInEx/模组文件已保留。"
                 )
-                self.finish_message.setStyleSheet("color: #4BA348;")
             elif self.selected_components == set(components_by_id):
                 self.finish_message.setText("{} 已成功卸载。".format(product_name))
-                self.finish_message.setStyleSheet("color: #4BA348;")
             else:
                 self.finish_message.setText(
                     "所选组件已成功卸载，其他组件和安装信息已保留。"
                 )
-                self.finish_message.setStyleSheet("color: #4BA348;")
             self.go_to_page("finish")
 
         def go_to_page(self, name):
@@ -1356,6 +1363,7 @@ def run_gui(manifest_path, manifest):
         binding = "PySide2"
     configure_high_dpi(QApplication, Qt, binding)
     app = QApplication(sys.argv)
+    configure_windows_qt_style(app)
     program_name = manifest.get("program_name", "程序")
     app.setApplicationName("{} 卸载程序".format(program_name))
     app.setApplicationDisplayName("{} 卸载程序".format(program_name))
