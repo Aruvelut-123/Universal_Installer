@@ -25,7 +25,11 @@ import traceback
 from typing import Any
 
 from uninstaller import (
+    INSTALL_DATA_DIRECTORY,
+    INSTALL_MANIFEST_NAME,
     InstallRecorder,
+    installed_component_versions,
+    load_manifest,
     register_windows_uninstaller,
     remove_windows_uninstall_entry,
 )
@@ -306,7 +310,8 @@ PROGRAM_NAME: str = INSTALLER_METADATA["program_name"]
 VERSION: str = INSTALLER_METADATA["version"]
 REGISTRY_KEY: str = INSTALLER_METADATA["registry_key"]
 UNINSTALL_REG_KEY: str = INSTALLER_METADATA["uninstall_registry_key"]
-WINDOW_SIZE = (640, 480)  # 固定窗口大小
+DEFAULT_WINDOW_SIZE = (760, 560)
+MINIMUM_WINDOW_SIZE = (640, 480)
 METADATA_PATH: str = INSTALLER_METADATA["item_metadata"]
 MAIN_ITEM: int = INSTALLER_METADATA["main_item"]
 
@@ -1621,7 +1626,7 @@ class LicensePage(BasePage):
 
     def on_accept(self):
         if self.agree_checkbox.isChecked():
-            self.parent.go_to_page("components")
+            self.parent.go_to_page("directory")
 
     def on_cancel(self):
         self.parent.cancel_installation()
@@ -1654,6 +1659,10 @@ class ComponentsPage(BasePage):
         items = get_metadata()["items"]
         self.items_by_id = {item["id"]: item for item in items}
         self.tree_items_by_id = {}
+        self.base_labels_by_id = {}
+        self.default_states_by_id = {}
+        self.installed_versions = {}
+        self.loaded_install_root = None
         self.archive_size_cache = {}
         self.has_missing_required_files = False
 
@@ -1691,6 +1700,7 @@ class ComponentsPage(BasePage):
                     else Qt.Unchecked
                 )
                 tree_item.setCheckState(0, initial_state)
+            self.default_states_by_id[item["id"]] = tree_item.checkState(0)
 
             if missing_files:
                 label = f"{item['name']} (未找到对应文件)"
@@ -1710,6 +1720,7 @@ class ComponentsPage(BasePage):
                 )
             if item.get("version"):
                 label = f"{label}  v{item['version']}"
+            self.base_labels_by_id[item["id"]] = label
             tree_item.setText(0, label)
 
         # Then attach nodes by stable ID instead of fuzzy display-name lookup.
@@ -1753,7 +1764,7 @@ class ComponentsPage(BasePage):
         self.content_layout.addWidget(components_group)
 
         # 添加按钮
-        back_btn = self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("license"))
+        self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("directory"))
         self.next_button = self.add_button("下一步(N)", self.on_next, "primary")
         self.next_button.setEnabled(not self.has_missing_required_files)
         self.add_button("取消(C)", self.on_cancel)
@@ -1786,7 +1797,16 @@ class ComponentsPage(BasePage):
             self.parent.selected_components[key] = state
 
         self.parent.need_space = self.need_space
-        self.parent.go_to_page("directory")
+        directory_page = self.parent.pages["directory"]
+        if not directory_page.has_sufficient_space(self.need_space):
+            QMessageBox.warning(
+                self,
+                "空间不足",
+                "所选游戏目录所在磁盘没有足够空间安装这些组件。",
+            )
+            self.parent.go_to_page("directory")
+            return
+        self.parent.go_to_page("install")
 
     def on_cancel(self):
         self.parent.cancel_installation()
@@ -1797,11 +1817,70 @@ class ComponentsPage(BasePage):
             "desc", "未找到描述"
         )
         version = self.items_by_id.get(component_key, {}).get("version")
+        if component_key in self.installed_versions:
+            installed_version = self.installed_versions[component_key]
+            installed_text = installed_version or "未记录版本"
+            description = f"<p><b>已安装版本:</b> {installed_text}</p>{description}"
         if version:
-            description = f"<p><b>版本:</b> {version}</p>{description}"
+            description = f"<p><b>可安装版本:</b> {version}</p>{description}"
 
         # 更新描述文本
         self.description_text.setHtml(description)
+
+    def load_installation_state(self, install_root):
+        """Restore selections and versions recorded in the chosen game folder."""
+        root = Path(install_root).resolve()
+        if root == self.loaded_install_root:
+            return bool(self.installed_versions)
+
+        manifest_path = (
+            root / INSTALL_DATA_DIRECTORY / INSTALL_MANIFEST_NAME
+        )
+        manifest = None
+        if manifest_path.is_file():
+            _, manifest = load_manifest(manifest_path)
+        installed_versions = (
+            installed_component_versions(manifest) if manifest else {}
+        )
+
+        self.loaded_install_root = root
+        self.installed_versions = installed_versions
+        with blocked_signals(self.components_list):
+            for component_id, tree_item in self.tree_items_by_id.items():
+                item = self.items_by_id[component_id]
+                if not tree_item.flags() & Qt.ItemIsEnabled:
+                    state = Qt.Checked if item.get("required") else Qt.Unchecked
+                elif item.get("required"):
+                    state = Qt.Checked
+                elif manifest is not None:
+                    state = (
+                        Qt.Checked
+                        if component_id in installed_versions
+                        else Qt.Unchecked
+                    )
+                else:
+                    state = self.default_states_by_id[component_id]
+                tree_item.setCheckState(0, state)
+
+                label = self.base_labels_by_id[component_id]
+                if component_id in installed_versions:
+                    installed_version = installed_versions[component_id]
+                    available_version = item.get("version")
+                    if (
+                        installed_version
+                        and available_version
+                        and installed_version != available_version
+                    ):
+                        status = f"已安装 v{installed_version}，可更新"
+                    elif installed_version:
+                        status = f"已安装 v{installed_version}"
+                    else:
+                        status = "已安装"
+                    label = f"{label}  ({status})"
+                tree_item.setText(0, label)
+
+        self.synchronize_selection()
+        return manifest is not None
 
     def on_item_clicked(self, item, column):
         # 如果点击的是父项目，更新子项目的选择状态
@@ -2025,8 +2104,8 @@ class DirectoryPage(BasePage):
         self.update_disk_space()
 
         # 添加按钮
-        back_btn = self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("components"))
-        self.install_button = self.add_button("安装(I)", self.on_install, "primary")
+        self.add_button("< 上一步(P)", lambda: self.parent.go_to_page("license"))
+        self.next_button = self.add_button("下一步(N)", self.on_next, "primary")
         self.add_button("取消(C)", self.on_cancel)
 
         # 监听路径变化
@@ -2217,14 +2296,27 @@ class DirectoryPage(BasePage):
                     if enough_space
                     else "color: red; font-size: 9pt; font-weight: bold; margin: 5px;"
                 )
-                if hasattr(self, "install_button"):
-                    self.install_button.setEnabled(enough_space)
+                if hasattr(self, "next_button"):
+                    self.next_button.setEnabled(enough_space)
             except OSError:
                 self.available_label.setText("可用空间: 未知")
                 self.available_label.setStyleSheet("color: palette(mid); font-size: 9pt;")
 
-    def on_install(self):
-        path = self.path_input.text()
+    def has_sufficient_space(self, required_space):
+        path = self.path_input.text().strip()
+        try:
+            existing_path = os.path.abspath(path)
+            while not os.path.exists(existing_path):
+                parent_path = os.path.dirname(existing_path)
+                if parent_path == existing_path:
+                    return False
+                existing_path = parent_path
+            return shutil.disk_usage(existing_path).free >= required_space
+        except OSError:
+            return False
+
+    def on_next(self):
+        path = self.path_input.text().strip()
         if not path:
             QMessageBox.warning(self, "路径错误", "请选择安装目录！")
             return
@@ -2233,8 +2325,25 @@ class DirectoryPage(BasePage):
             QMessageBox.warning(self, "路径错误", "安装路径不能包含中文字符！")
             return
 
-        self.parent.install_path = path
-        self.parent.go_to_page("install")
+        self.parent.install_path = str(Path(path).resolve())
+        try:
+            installed = self.parent.pages["components"].load_installation_state(
+                self.parent.install_path
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            QMessageBox.warning(
+                self,
+                "安装信息无效",
+                f"无法读取该游戏目录中的现有安装信息：\n\n{error}",
+            )
+            return
+        if installed:
+            QMessageBox.information(
+                self,
+                "检测到现有安装",
+                "已根据游戏目录中的安装信息勾选现有组件，并显示其版本。",
+            )
+        self.parent.go_to_page("components")
 
     def on_cancel(self):
         self.parent.cancel_installation()
@@ -2407,7 +2516,8 @@ class InstallerWindow(QMainWindow):
         self.setWindowTitle(PROGRAM_NAME)
         self.setWindowIcon(get_application_icon())
         apply_application_theme(get_system_theme())
-        self.setFixedSize(*WINDOW_SIZE)
+        self.setMinimumSize(*MINIMUM_WINDOW_SIZE)
+        self.resize(*DEFAULT_WINDOW_SIZE)
 
         style_hints = QApplication.styleHints()
         if hasattr(style_hints, "colorSchemeChanged"):
@@ -2475,7 +2585,11 @@ class InstallerWindow(QMainWindow):
 
     def closeEvent(self, event):
         install_page = getattr(self, "pages", {}).get("install")
-        install_thread = getattr(install_page, "thread", None)
+        install_thread = (
+            install_page.__dict__.get("thread")
+            if install_page is not None
+            else None
+        )
         if install_thread is not None and install_thread.isRunning():
             QMessageBox.warning(
                 self,

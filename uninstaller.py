@@ -114,6 +114,14 @@ def _manifest_components(manifest):
     ]
 
 
+def installed_component_versions(manifest):
+    """Return installed component IDs mapped to their recorded versions."""
+    return {
+        component["id"]: component.get("version")
+        for component in _manifest_components(manifest)
+    }
+
+
 def dependent_removal_closure(manifest, selected_components):
     """Include installed dependents that cannot remain without selected items."""
     selected = set(selected_components)

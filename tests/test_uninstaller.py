@@ -7,6 +7,19 @@ import uninstaller
 
 
 class ComponentUninstallTests(unittest.TestCase):
+    def test_installed_component_versions_supports_versionless_components(self):
+        manifest = {
+            "components": [
+                {"id": "core", "version": "1.2.3"},
+                {"id": "extras", "version": None},
+            ]
+        }
+
+        self.assertEqual(
+            uninstaller.installed_component_versions(manifest),
+            {"core": "1.2.3", "extras": None},
+        )
+
     def make_installation(self):
         temporary = tempfile.TemporaryDirectory()
         root = Path(temporary.name)
