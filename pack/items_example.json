@@ -46,6 +46,7 @@
         {
             "display_name": "Application core",
             "component_id": "core",
+            "is_core_component": true,
             "version": "2.1.0",
             "required": true,
             "selected_by_default": true,

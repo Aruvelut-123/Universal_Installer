@@ -840,7 +840,7 @@ def uninstall(manifest_path, manifest, selected_components=None):
     if core_removed or not remaining_ids:
         remove_windows_uninstall_entry(manifest.get("windows_registry"))
 
-    if remaining_ids:
+    if remaining_ids and not core_removed:
         updated_manifest = dict(manifest)
         updated_manifest.update({
             "schema_version": 2,

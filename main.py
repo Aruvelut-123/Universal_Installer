@@ -226,6 +226,7 @@ COMPONENT_METADATA_ALIASES = {
     "generic_x86_files": "x86file",
     "generic_x64_files": "x64file",
     "destinations": "actions",
+    "is_core_component": "is_core",
     "default_install_path": "default_path",
     "default_linux_install_path": "default_path_linux",
     "default_macos_install_path": "default_path_macos",
@@ -347,6 +348,7 @@ def get_metadata() -> dict:
         for readable_key, internal_key in COMPONENT_METADATA_ALIASES.items():
             if internal_key not in item and readable_key in item:
                 item[internal_key] = item[readable_key]
+        item.setdefault("is_core", False)
         normalized_items.append(item)
     data["items"] = normalized_items
 
@@ -412,6 +414,7 @@ def get_metadata() -> dict:
             "required": bool,
             "checked": bool,
             "dependencies": list,
+            "is_core": bool,
         }
         invalid_fields = [
             key
@@ -528,8 +531,17 @@ def get_metadata() -> dict:
 
     if not 0 <= MAIN_ITEM < len(data["items"]):
         raise ValueError(f"main_item={MAIN_ITEM} 超出 items 范围")
+    core_components = [item for item in data["items"] if item["is_core"]]
+    if len(core_components) > 1:
+        raise ValueError("只能有一个组件设置 is_core_component=true")
     metadata = data
     return metadata
+
+
+def get_core_component():
+    """Return the explicitly flagged core, with legacy index fallback."""
+    items = get_metadata()["items"]
+    return next((item for item in items if item["is_core"]), items[MAIN_ITEM])
 
 THEME_COLORS = {
     "light": {
@@ -1319,7 +1331,7 @@ class InstallThread(QThread):
                 INSTALLER_METADATA,
                 [self.items_by_id[component] for component in selected_components],
                 uninstaller_configuration,
-                core_component=get_metadata()["items"][MAIN_ITEM]["id"],
+                core_component=get_core_component()["id"],
             )
             print(f"[DEBUG] 需要安装的组件数: {total_components}")
 

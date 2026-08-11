@@ -126,15 +126,8 @@ class ComponentUninstallTests(unittest.TestCase):
         self.assertTrue((root / "BepInEx/plugins/mod.dll").is_file())
         self.assertTrue((root / "shared.dll").is_file())
         remove.assert_called_once_with(manifest["windows_registry"])
-
-        _, updated = uninstaller.load_manifest(manifest_path)
-        self.assertNotIn("core", updated["selected_components"])
-        self.assertIsNone(updated["windows_registry"])
-        shared = next(entry for entry in updated["files"] if entry["path"] == "shared.dll")
-        self.assertEqual(shared["components"], ["api"])
-        self.assertNotIn(
-            "uninstall.AppImage", {entry["path"] for entry in updated["files"]}
-        )
+        self.assertFalse(manifest_path.exists())
+        self.assertFalse((root / uninstaller.INSTALL_DATA_DIRECTORY).exists())
 
     def test_partial_uninstall_keeps_registry_when_core_remains(self):
         temporary, root, manifest_path, manifest = self.make_installation()
