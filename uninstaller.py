@@ -924,147 +924,445 @@ def configure_high_dpi(QApplication, Qt, binding):
     QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
 
 
+def resolve_uninstaller_ui_asset(manifest_path, manifest, role):
+    """Resolve a recorded UI asset without allowing paths outside private data."""
+    configuration = manifest.get("uninstaller_ui")
+    if not isinstance(configuration, dict):
+        return None
+    assets = configuration.get("assets")
+    if not isinstance(assets, dict) or not isinstance(assets.get(role), str):
+        return None
+    data_directory = Path(manifest_path).resolve().parent
+    candidate = (data_directory / Path(assets[role])).resolve()
+    if not _is_relative_to(candidate, data_directory) or not candidate.is_file():
+        return None
+    return candidate
+
+
+def create_uninstaller_window(manifest_path, manifest):
+    """Create the branded wizard window; the caller owns the QApplication."""
+    try:
+        from PySide6.QtCore import Qt, QThread, Signal, QTimer
+        from PySide6.QtGui import QFont, QIcon, QPixmap
+        from PySide6.QtWidgets import (
+            QApplication, QCheckBox, QFrame, QGroupBox, QHBoxLayout, QLabel,
+            QMainWindow, QMessageBox, QProgressBar, QPushButton, QStackedWidget,
+            QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+        )
+    except ImportError:
+        from PySide2.QtCore import Qt, QThread, Signal, QTimer
+        from PySide2.QtGui import QFont, QIcon, QPixmap
+        from PySide2.QtWidgets import (
+            QApplication, QCheckBox, QFrame, QGroupBox, QHBoxLayout, QLabel,
+            QMainWindow, QMessageBox, QProgressBar, QPushButton, QStackedWidget,
+            QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+        )
+    components = _manifest_components(manifest)
+    components_by_id = {component["id"]: component for component in components}
+    program_name = manifest.get("program_name", "程序")
+    ui_configuration = manifest.get("uninstaller_ui")
+    if not isinstance(ui_configuration, dict):
+        ui_configuration = {}
+    product_name = ui_configuration.get("product_name", program_name)
+    footer_text = ui_configuration.get("footer_text", "Universal Installer")
+    core_component = manifest.get("core_component")
+
+    class UninstallWorker(QThread):
+        progress_updated = Signal(int, str)
+        completed = Signal(object, object)
+
+        def __init__(self, selected):
+            super().__init__()
+            self.selected = set(selected)
+
+        def run(self):
+            self.progress_updated.emit(10, "正在分析已安装文件...")
+            errors, deferred = uninstall(
+                manifest_path, manifest, self.selected
+            )
+            self.progress_updated.emit(
+                100 if not errors else 0,
+                "卸载完成" if not errors else "卸载过程中出现错误",
+            )
+            self.completed.emit(errors, deferred)
+
+    class UninstallerWindow(QMainWindow):
+        def __init__(self):
+            super().__init__()
+            self.setWindowTitle("卸载 {}".format(product_name))
+            self.setMinimumSize(640, 480)
+            self.resize(760, 560)
+            icon = resolve_uninstaller_ui_asset(
+                manifest_path, manifest, "icon"
+            )
+            if icon is not None:
+                self.setWindowIcon(QIcon(str(icon)))
+            self.components = components
+            self.items_by_id = {}
+            self.selected_components = set()
+            self.worker = None
+            self.success = False
+            self.stacked = QStackedWidget()
+            self.setCentralWidget(self.stacked)
+            self.pages = {
+                "welcome": self.build_welcome_page(),
+                "license": self.build_license_page(),
+                "components": self.build_components_page(),
+                "progress": self.build_progress_page(),
+                "finish": self.build_finish_page(),
+            }
+            for page in self.pages.values():
+                self.stacked.addWidget(page)
+            self.apply_style()
+            self.go_to_page("welcome")
+
+        def apply_style(self):
+            self.setStyleSheet("""
+                QMainWindow, QWidget { font-family: "Microsoft YaHei UI", sans-serif; }
+                QGroupBox { font-weight: bold; margin-top: 8px; }
+                QGroupBox::title { subcontrol-origin: margin; left: 8px; }
+                QPushButton { min-width: 100px; min-height: 30px; padding: 2px 10px; }
+                QPushButton[primary="true"] { background: #4BA348; color: white; border: 1px solid #3D8C39; }
+                QPushButton[primary="true"]:hover { background: #3D8C39; }
+                QTextEdit, QTreeWidget { border: 1px solid palette(mid); }
+                QProgressBar { min-height: 20px; text-align: center; }
+                QProgressBar::chunk { background: #4BA348; }
+            """)
+
+        def page_shell(self, title, subtitle, include_header=True):
+            page = QWidget()
+            layout = QVBoxLayout(page)
+            layout.setContentsMargins(20, 16, 20, 16)
+            layout.setSpacing(10)
+            if include_header:
+                header_asset = resolve_uninstaller_ui_asset(
+                    manifest_path, manifest, "header"
+                )
+                if header_asset is not None:
+                    header = QLabel()
+                    pixmap = QPixmap(str(header_asset))
+                    header.setPixmap(pixmap.scaledToHeight(72, Qt.SmoothTransformation))
+                    header.setAlignment(Qt.AlignCenter)
+                    layout.addWidget(header)
+            title_label = QLabel(title)
+            title_label.setFont(QFont("Microsoft YaHei UI", 14, QFont.Bold))
+            title_label.setAlignment(Qt.AlignCenter)
+            subtitle_label = QLabel(subtitle)
+            subtitle_label.setWordWrap(True)
+            subtitle_label.setAlignment(Qt.AlignCenter)
+            layout.addWidget(title_label)
+            layout.addWidget(subtitle_label)
+            content_layout = QVBoxLayout()
+            layout.addLayout(content_layout, 1)
+            button_layout = QHBoxLayout()
+            button_layout.addStretch(1)
+            layout.addLayout(button_layout)
+            footer = QLabel(footer_text)
+            footer.setAlignment(Qt.AlignCenter)
+            footer.setStyleSheet("color: palette(mid); font-size: 8pt;")
+            layout.addWidget(footer)
+            return page, content_layout, button_layout
+
+        @staticmethod
+        def add_button(layout, text, callback, primary=False):
+            button = QPushButton(text)
+            if primary:
+                button.setProperty("primary", True)
+            button.clicked.connect(callback)
+            layout.addWidget(button)
+            return button
+
+        def build_welcome_page(self):
+            page, content, buttons = self.page_shell(
+                "{} 卸载程序".format(product_name),
+                "此向导将帮助你移除已安装的组件。",
+                include_header=False,
+            )
+            body = QHBoxLayout()
+            sidebar_asset = resolve_uninstaller_ui_asset(
+                manifest_path, manifest, "sidebar"
+            )
+            if sidebar_asset is not None:
+                sidebar = QLabel()
+                sidebar.setPixmap(
+                    QPixmap(str(sidebar_asset)).scaledToWidth(
+                        190, Qt.SmoothTransformation
+                    )
+                )
+                sidebar.setAlignment(Qt.AlignCenter)
+                body.addWidget(sidebar)
+            message = QLabel(
+                "将保留未选择的组件和共享文件。\n\n"
+                "点击[下一步(N)]阅读许可证并继续。"
+            )
+            message.setWordWrap(True)
+            message.setAlignment(Qt.AlignCenter)
+            body.addWidget(message, 1)
+            content.addLayout(body)
+            self.add_button(buttons, "取消(C)", self.cancel_uninstall)
+            self.add_button(
+                buttons, "下一步(N)",
+                lambda: self.go_to_page("license"), True
+            )
+            return page
+
+        def build_license_page(self):
+            page, content, buttons = self.page_shell(
+                program_name,
+                "卸载 {} 之前，请阅读许可证条款。".format(product_name),
+            )
+            group = QGroupBox("许可证协议")
+            group_layout = QVBoxLayout(group)
+            self.license_text = QTextEdit()
+            self.license_text.setReadOnly(True)
+            license_asset = resolve_uninstaller_ui_asset(
+                manifest_path, manifest, "license"
+            )
+            if license_asset is None:
+                license_contents = "许可证文件未随此安装记录保存。"
+            else:
+                try:
+                    license_contents = license_asset.read_text(encoding="utf-8")
+                except (OSError, UnicodeDecodeError) as error:
+                    license_contents = "无法读取许可证：{}".format(error)
+            self.license_text.setPlainText(license_contents)
+            group_layout.addWidget(self.license_text)
+            self.license_checkbox = QCheckBox("我已阅读许可证条款")
+            group_layout.addWidget(self.license_checkbox)
+            content.addWidget(group)
+            self.add_button(
+                buttons, "< 上一步(P)", lambda: self.go_to_page("welcome")
+            )
+            self.license_next = self.add_button(
+                buttons, "下一步(N)", lambda: self.go_to_page("components"), True
+            )
+            self.license_next.setEnabled(False)
+            self.license_checkbox.stateChanged.connect(
+                lambda _state: self.license_next.setEnabled(
+                    self.license_checkbox.isChecked()
+                )
+            )
+            self.add_button(buttons, "取消(C)", self.cancel_uninstall)
+            return page
+
+        def build_components_page(self):
+            page, content, buttons = self.page_shell(
+                program_name,
+                "选择要卸载的组件。依赖所选组件的项目也必须一起卸载。",
+            )
+            self.component_tree = QTreeWidget()
+            self.component_tree.setHeaderLabels(("组件", "已安装版本", "依赖"))
+            for component in components:
+                item = QTreeWidgetItem(self.component_tree)
+                name = component["name"]
+                if component["id"] == core_component:
+                    name += " (核心)"
+                item.setText(0, name)
+                item.setText(1, component.get("version") or "—")
+                dependency_names = [
+                    components_by_id[value]["name"]
+                    for value in component["dependencies"]
+                    if value in components_by_id
+                ]
+                item.setText(2, ", ".join(dependency_names) or "—")
+                item.setData(0, Qt.UserRole, component["id"])
+                item.setCheckState(0, Qt.Unchecked)
+                self.items_by_id[component["id"]] = item
+            self.component_tree.resizeColumnToContents(0)
+            self.component_tree.itemChanged.connect(self.on_component_changed)
+            content.addWidget(self.component_tree)
+            self.add_button(
+                buttons, "< 上一步(P)", lambda: self.go_to_page("license")
+            )
+            self.add_button(buttons, "卸载(U)", self.confirm_uninstall, True)
+            self.add_button(buttons, "取消(C)", self.cancel_uninstall)
+            return page
+
+        def build_progress_page(self):
+            page, content, _buttons = self.page_shell(
+                "正在卸载 {}".format(product_name),
+                "正在移除所选组件，请稍候...",
+            )
+            self.progress_bar = QProgressBar()
+            self.progress_bar.setRange(0, 100)
+            self.progress_log = QTextEdit()
+            self.progress_log.setReadOnly(True)
+            content.addWidget(self.progress_bar)
+            content.addWidget(self.progress_log, 1)
+            return page
+
+        def build_finish_page(self):
+            page, content, buttons = self.page_shell(
+                "卸载结果", "卸载操作尚未运行。"
+            )
+            self.finish_message = QLabel()
+            self.finish_message.setWordWrap(True)
+            self.finish_message.setAlignment(Qt.AlignCenter)
+            self.finish_message.setFont(QFont("Microsoft YaHei UI", 10, QFont.Bold))
+            content.addStretch(1)
+            content.addWidget(self.finish_message)
+            content.addStretch(1)
+            self.add_button(buttons, "完成(F)", self.close, True)
+            return page
+
+        def selected_component_ids(self):
+            return {
+                component_id for component_id, item in self.items_by_id.items()
+                if item.checkState(0) == Qt.Checked
+            }
+
+        def on_component_changed(self, item, _column):
+            if self.component_tree.signalsBlocked():
+                return
+            component_id = item.data(0, Qt.UserRole)
+            selected_now = self.selected_component_ids()
+            if item.checkState(0) != Qt.Checked:
+                affected = [
+                    component["name"] for component in components
+                    if component["id"] in selected_now
+                    and component_id in component["dependencies"]
+                ]
+                if affected:
+                    self.component_tree.blockSignals(True)
+                    item.setCheckState(0, Qt.Checked)
+                    self.component_tree.blockSignals(False)
+                    QMessageBox.information(
+                        self, "无法保留依赖组件",
+                        "以下已选择组件需要它，不能单独取消：\n\n{}".format(
+                            ", ".join(affected)
+                        ),
+                    )
+                return
+            expanded = dependent_removal_closure(manifest, selected_now)
+            added = expanded - selected_now
+            if not added:
+                return
+            names = ", ".join(
+                self.items_by_id[value].text(0) for value in sorted(added)
+            )
+            reply = QMessageBox.warning(
+                self, "组件依赖警告",
+                "以下组件依赖所选组件，也必须一起卸载：\n\n{}\n\n"
+                "选择继续会自动勾选它们；选择取消会撤销本次勾选。".format(names),
+                QMessageBox.Ok | QMessageBox.Cancel, QMessageBox.Cancel,
+            )
+            self.component_tree.blockSignals(True)
+            try:
+                if reply == QMessageBox.Ok:
+                    for value in added:
+                        self.items_by_id[value].setCheckState(0, Qt.Checked)
+                else:
+                    item.setCheckState(0, Qt.Unchecked)
+            finally:
+                self.component_tree.blockSignals(False)
+
+        def confirm_uninstall(self):
+            selected = self.selected_component_ids()
+            if not selected:
+                QMessageBox.information(self, "未选择组件", "没有选择要卸载的组件。")
+                return
+            message = (
+                "只会移除所选组件独占的文件，共享文件会保留；"
+                "安装前被覆盖的文件将恢复。"
+            )
+            if core_component in selected:
+                message += (
+                    "\n\n已选择核心组件：卸载器、Windows 注册项和全部安装记录"
+                    "也会删除；保留的 BepInEx/模组文件将不再由此工具管理。"
+                )
+            reply = QMessageBox.question(
+                self, "确认卸载", message,
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
+            self.selected_components = selected
+            self.go_to_page("progress")
+            QTimer.singleShot(0, self.start_uninstall)
+
+        def start_uninstall(self):
+            self.progress_bar.setValue(0)
+            self.progress_log.clear()
+            self.worker = UninstallWorker(self.selected_components)
+            self.worker.progress_updated.connect(self.update_progress)
+            self.worker.completed.connect(self.uninstall_finished)
+            self.worker.start()
+
+        def update_progress(self, value, message):
+            self.progress_bar.setValue(value)
+            self.progress_log.append(message)
+
+        def uninstall_finished(self, errors, deferred):
+            errors = list(errors)
+            if not errors:
+                try:
+                    remove_running_uninstaller(deferred)
+                except OSError as error:
+                    errors.append("无法清理卸载器：{}".format(error))
+            self.success = not errors
+            if errors:
+                self.finish_message.setText(
+                    "卸载未完成，安装信息已尽可能保留，可稍后重试：\n\n{}".format(
+                        "\n".join(errors[:10])
+                    )
+                )
+                self.finish_message.setStyleSheet("color: #C62828;")
+            elif core_component in self.selected_components:
+                self.finish_message.setText(
+                    "核心组件和安装器记录已删除。未选择的 BepInEx/模组文件已保留。"
+                )
+                self.finish_message.setStyleSheet("color: #4BA348;")
+            elif self.selected_components == set(components_by_id):
+                self.finish_message.setText("{} 已成功卸载。".format(product_name))
+                self.finish_message.setStyleSheet("color: #4BA348;")
+            else:
+                self.finish_message.setText(
+                    "所选组件已成功卸载，其他组件和安装信息已保留。"
+                )
+                self.finish_message.setStyleSheet("color: #4BA348;")
+            self.go_to_page("finish")
+
+        def go_to_page(self, name):
+            self.stacked.setCurrentWidget(self.pages[name])
+
+        def cancel_uninstall(self):
+            reply = QMessageBox.question(
+                self, "退出卸载", "确定要退出卸载程序吗？",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+            )
+            if reply == QMessageBox.Yes:
+                self.close()
+
+        def closeEvent(self, event):
+            if self.worker is not None and self.worker.isRunning():
+                QMessageBox.warning(
+                    self, "卸载进行中", "文件仍在处理中，请等待卸载完成。"
+                )
+                event.ignore()
+                return
+            super().closeEvent(event)
+
+    return UninstallerWindow()
+
+
 def run_gui(manifest_path, manifest):
     try:
         from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import (
-            QApplication, QDialog, QDialogButtonBox, QLabel, QMessageBox,
-            QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-        )
+        from PySide6.QtWidgets import QApplication
         binding = "PySide6"
     except ImportError:
         from PySide2.QtCore import Qt
-        from PySide2.QtWidgets import (
-            QApplication, QDialog, QDialogButtonBox, QLabel, QMessageBox,
-            QTreeWidget, QTreeWidgetItem, QVBoxLayout,
-        )
+        from PySide2.QtWidgets import QApplication
         binding = "PySide2"
-
     configure_high_dpi(QApplication, Qt, binding)
     app = QApplication(sys.argv)
     program_name = manifest.get("program_name", "程序")
     app.setApplicationName("{} 卸载程序".format(program_name))
-    components = _manifest_components(manifest)
-    dialog = QDialog()
-    dialog.setWindowTitle("卸载 {}".format(program_name))
-    layout = QVBoxLayout(dialog)
-    layout.addWidget(QLabel("选择要卸载的组件。未选择的组件及共享文件会保留。"))
-    tree = QTreeWidget()
-    tree.setHeaderLabels(("组件", "版本", "依赖"))
-    items_by_id = {}
-    for component in components:
-        item = QTreeWidgetItem(tree)
-        item.setText(0, component["name"])
-        item.setText(1, component.get("version") or "—")
-        item.setText(2, ", ".join(component["dependencies"]) or "—")
-        item.setData(0, Qt.UserRole, component["id"])
-        item.setCheckState(0, Qt.Unchecked)
-        items_by_id[component["id"]] = item
-    tree.resizeColumnToContents(0)
-    layout.addWidget(tree)
-
-    changing_selection = [False]
-
-    def selected_component_ids():
-        return {
-            component_id for component_id, item in items_by_id.items()
-            if item.checkState(0) == Qt.Checked
-        }
-
-    def on_component_changed(item, _column):
-        if changing_selection[0]:
-            return
-        if item.checkState(0) != Qt.Checked:
-            selected_now = selected_component_ids()
-            component_id = item.data(0, Qt.UserRole)
-            component = next(
-                value for value in components if value["id"] == component_id
-            )
-            if any(
-                dependency in selected_now
-                for dependency in component["dependencies"]
-            ):
-                changing_selection[0] = True
-                item.setCheckState(0, Qt.Checked)
-                changing_selection[0] = False
-                QMessageBox.information(
-                    dialog,
-                    "无法保留依赖组件",
-                    "该组件依赖一个已选择卸载的组件。请先取消勾选它的依赖。",
-                )
-            return
-        selected_now = selected_component_ids()
-        expanded = dependent_removal_closure(manifest, selected_now)
-        added = expanded - selected_now
-        if not added:
-            return
-        names = ", ".join(
-            items_by_id[component_id].text(0)
-            for component_id in sorted(added)
-        )
-        reply = QMessageBox.warning(
-            dialog,
-            "组件依赖警告",
-            "以下组件依赖所选组件，也必须一起卸载：\n\n{}\n\n"
-            "选择继续会自动勾选它们；选择取消会撤销本次勾选。".format(names),
-            QMessageBox.Ok | QMessageBox.Cancel,
-            QMessageBox.Cancel,
-        )
-        changing_selection[0] = True
-        try:
-            if reply == QMessageBox.Ok:
-                for component_id in added:
-                    items_by_id[component_id].setCheckState(0, Qt.Checked)
-            else:
-                item.setCheckState(0, Qt.Unchecked)
-        finally:
-            changing_selection[0] = False
-
-    tree.itemChanged.connect(on_component_changed)
-    buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-    buttons.accepted.connect(dialog.accept)
-    buttons.rejected.connect(dialog.reject)
-    layout.addWidget(buttons)
-    execute_dialog = getattr(dialog, "exec", None) or dialog.exec_
-    if execute_dialog() != QDialog.Accepted:
-        return 0
-
-    selected = selected_component_ids()
-    if not selected:
-        QMessageBox.information(None, "未选择组件", "没有选择要卸载的组件。")
-        return 0
-    reply = QMessageBox.question(
-        None,
-        "确认卸载",
-        "只会移除所选组件独占的文件，共享文件会保留；安装前被覆盖的文件将恢复。",
-        QMessageBox.Yes | QMessageBox.No,
-        QMessageBox.No,
-    )
-    if reply != QMessageBox.Yes:
-        return 0
-
-    errors, deferred = uninstall(manifest_path, manifest, selected)
-    if errors:
-        QMessageBox.critical(
-            None,
-            "卸载未完成",
-            "部分文件无法处理，安装信息已保留，可稍后重试：\n\n{}".format(
-                "\n".join(errors[:10])
-            ),
-        )
-        return 1
-    all_removed = selected == {component["id"] for component in components}
-    message = (
-        "{} 已成功卸载。".format(program_name)
-        if all_removed
-        else "所选组件已成功卸载，其他组件和安装信息已保留。"
-    )
-    QMessageBox.information(None, "卸载完成", message)
-    try:
-        remove_running_uninstaller(deferred)
-    except OSError as error:
-        QMessageBox.warning(None, "清理提示", "卸载器将在稍后清理或需手动删除：{}".format(error))
-    return 0
+    app.setApplicationDisplayName("{} 卸载程序".format(program_name))
+    window = create_uninstaller_window(manifest_path, manifest)
+    window.show()
+    execute = getattr(app, "exec", None) or app.exec_
+    return execute()
 
 
 def main():

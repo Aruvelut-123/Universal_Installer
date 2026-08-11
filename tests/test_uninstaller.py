@@ -176,6 +176,22 @@ class ComponentUninstallTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 uninstaller._resolve_uninstall_directory(root, "{install_path}")
 
+    def test_uninstaller_ui_assets_cannot_escape_private_data(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            data = root / uninstaller.INSTALL_DATA_DIRECTORY
+            data.mkdir()
+            manifest_path = data / uninstaller.INSTALL_MANIFEST_NAME
+            outside = root / "outside.txt"
+            outside.write_text("private", encoding="utf-8")
+            manifest = {
+                "uninstaller_ui": {"assets": {"license": "../outside.txt"}}
+            }
+
+            self.assertIsNone(uninstaller.resolve_uninstaller_ui_asset(
+                manifest_path, manifest, "license"
+            ))
+
 
 class ManifestRecordingTests(unittest.TestCase):
     def test_recorder_tracks_component_versions_and_file_owners(self):
