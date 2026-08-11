@@ -331,11 +331,24 @@ jobs:
           SELF=$(readlink -f "$0")
           HERE=${SELF%/*}
           export LD_LIBRARY_PATH="$HERE/usr/lib:$HERE/usr/bin${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+          # Match the installer's Qt scaling behavior inside AppImage.
+          export QT_AUTO_SCREEN_SCALE_FACTOR=0
+          export QT_SCALE_FACTOR=1
+
           exec "$HERE/usr/bin/uninstaller" "$@"
           APPRUNEOF
           chmod +x UninstallerAppDir/AppRun
 
-          python -c "from PIL import Image; image = Image.open('pack/icon.ico').convert('RGBA').resize((256, 256), Image.Resampling.LANCZOS); image.save('UninstallerAppDir/icon.png')"
+          python3 -c "
+          from PIL import Image
+          image = Image.open('pack/icon.ico')
+          if hasattr(image, 'n_frames') and image.n_frames > 1:
+              image.seek(0)
+          image = image.convert('RGBA')
+          image = image.resize((256, 256), Image.Resampling.LANCZOS)
+          image.save('UninstallerAppDir/icon.png')
+          "
           cat > UninstallerAppDir/uninstaller.desktop << 'DESKTOPEOF'
           [Desktop Entry]
           Name=Universal Installer Uninstaller
