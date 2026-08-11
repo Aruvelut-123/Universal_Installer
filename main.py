@@ -17,6 +17,7 @@ import zipfile
 import rarfile
 import py7zr
 import tarfile
+import tempfile
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -377,6 +378,13 @@ def get_metadata() -> dict:
             for key in file_keys
             for file_name in (item.get(key) or [])
         ]
+        if configured_files and (
+            not isinstance(item.get("version"), str)
+            or not item["version"].strip()
+        ):
+            raise ValueError(
+                f"包含安装文件的组件 {component_id} 必须具有非空 version"
+            )
         actions = item.get("actions") or {}
         missing_actions = set(configured_files) - actions.keys()
         if missing_actions:
@@ -1055,89 +1063,94 @@ class InstallThread(QThread):
             if not inside_destination:
                 raise ValueError(f"压缩包路径越界: {member_name}")
 
-    def _prepare_archive_entries(self, entries, destination):
-        """Back up archive targets before extraction and record new directories."""
-        for member_name, is_directory in entries:
-            normalized = member_name.replace("\\", "/").rstrip("/")
-            if not normalized or normalized == ".":
-                continue
-            target = Path(destination).joinpath(*normalized.split("/"))
-            if is_directory:
-                self.recorder.prepare_directory(target)
-            else:
-                self.recorder.prepare_file(target)
+    def _install_extracted_tree(self, extracted_root, destination):
+        """Merge an extracted payload and avoid rewriting identical files."""
+        extracted_root = Path(extracted_root)
+        destination = Path(destination)
+        for current, directories, files in os.walk(str(extracted_root)):
+            current_path = Path(current)
+            relative = current_path.relative_to(extracted_root)
+            target_directory = destination / relative
+            self.recorder.prepare_directory(target_directory)
+            for directory in directories:
+                self.recorder.prepare_directory(target_directory / directory)
+            for filename in files:
+                source = current_path / filename
+                if source.is_symlink():
+                    raise ValueError(f"压缩包解压结果包含符号链接: {source}")
+                target = target_directory / filename
+                self.recorder.install_file(source, target)
 
     def _extract_archive(self, archive_name, archive_type, in_path):
-        """解压文件并确保压缩包句柄及时关闭。"""
-        if archive_type == 'zip':
-            with zipfile.ZipFile(archive_name, "r") as archive:
-                infos = archive.infolist()
-                self._validate_archive_members((info.filename for info in infos), in_path)
-                for info in infos:
-                    if stat.S_ISLNK(info.external_attr >> 16):
-                        raise ValueError(f"ZIP 压缩包包含符号链接: {info.filename}")
-                self._prepare_archive_entries(
-                    ((info.filename, info.is_dir()) for info in infos), in_path
-                )
-                archive.extractall(in_path)
-                for info in infos:
-                    mode = info.external_attr >> 16
-                    if not info.is_dir() and mode & 0o111:
-                        extracted = Path(in_path).joinpath(
-                            *info.filename.replace("\\", "/").split("/")
-                        )
-                        extracted.chmod(extracted.stat().st_mode | (mode & 0o111))
-        elif archive_type == 'rar':
-            with rarfile.RarFile(archive_name, "r") as archive:
-                infos = archive.infolist()
-                self._validate_archive_members((info.filename for info in infos), in_path)
-                for info in infos:
-                    is_symlink = getattr(info, "is_symlink", None)
-                    if is_symlink is not None and is_symlink():
-                        raise ValueError(f"RAR 压缩包包含符号链接: {info.filename}")
-                self._prepare_archive_entries(
-                    ((info.filename, info.is_dir()) for info in infos), in_path
-                )
-                archive.extractall(in_path)
-        elif archive_type == '7z':
-            with py7zr.SevenZipFile(archive_name, "r") as archive:
-                entries = archive.list()
-                self._validate_archive_members((entry.filename for entry in entries), in_path)
-                self._prepare_archive_entries(
-                    ((entry.filename, entry.is_directory) for entry in entries), in_path
-                )
-                archive.extractall(in_path)
-        elif archive_type == 'tar':
-            with tarfile.open(archive_name, "r:*") as archive:
-                members = archive.getmembers()
-                self._validate_archive_members((info.name for info in members), in_path)
-                unsupported = [
-                    info.name for info in members if not (info.isfile() or info.isdir())
-                ]
-                if unsupported:
-                    raise ValueError(
-                        f"TAR 压缩包包含不支持的链接或设备: {unsupported[0]}"
+        """Safely extract to a temporary tree, then transactionally merge it."""
+        with tempfile.TemporaryDirectory(prefix="universal-installer-") as temporary:
+            extract_path = Path(temporary)
+            if archive_type == 'zip':
+                with zipfile.ZipFile(archive_name, "r") as archive:
+                    infos = archive.infolist()
+                    self._validate_archive_members(
+                        (info.filename for info in infos), str(extract_path)
                     )
-                self._prepare_archive_entries(
-                    ((info.name, info.isdir()) for info in members), in_path
-                )
-                # Python 3.8 没有 extractall(filter=...)；上方已完成等价安全检查。
-                archive.extractall(in_path, members=members)
-        elif archive_type in {'gzip', 'bzip2', 'xz'}:
-            opener, suffix = {
-                'gzip': (gzip.open, '.gz'),
-                'bzip2': (bz2.open, '.bz2'),
-                'xz': (lzma.open, '.xz'),
-            }[archive_type]
-            output_name = os.path.basename(archive_name)[:-len(suffix)]
-            if not output_name:
-                raise ValueError(f"无法确定解压后的文件名: {archive_name}")
-            output_path = os.path.join(in_path, output_name)
-            self.recorder.prepare_file(output_path)
-            with opener(archive_name, 'rb') as source, open(output_path, 'wb') as target:
-                shutil.copyfileobj(source, target)
-        else:
-            raise ValueError(f"未知的压缩类型: {archive_type}")
+                    for info in infos:
+                        if stat.S_ISLNK(info.external_attr >> 16):
+                            raise ValueError(f"ZIP 压缩包包含符号链接: {info.filename}")
+                    archive.extractall(str(extract_path))
+                    for info in infos:
+                        mode = info.external_attr >> 16
+                        if not info.is_dir() and mode & 0o111:
+                            extracted = extract_path.joinpath(
+                                *info.filename.replace("\\", "/").split("/")
+                            )
+                            extracted.chmod(extracted.stat().st_mode | (mode & 0o111))
+            elif archive_type == 'rar':
+                with rarfile.RarFile(archive_name, "r") as archive:
+                    infos = archive.infolist()
+                    self._validate_archive_members(
+                        (info.filename for info in infos), str(extract_path)
+                    )
+                    for info in infos:
+                        is_symlink = getattr(info, "is_symlink", None)
+                        if is_symlink is not None and is_symlink():
+                            raise ValueError(f"RAR 压缩包包含符号链接: {info.filename}")
+                    archive.extractall(str(extract_path))
+            elif archive_type == '7z':
+                with py7zr.SevenZipFile(archive_name, "r") as archive:
+                    entries = archive.list()
+                    self._validate_archive_members(
+                        (entry.filename for entry in entries), str(extract_path)
+                    )
+                    archive.extractall(str(extract_path))
+            elif archive_type == 'tar':
+                with tarfile.open(archive_name, "r:*") as archive:
+                    members = archive.getmembers()
+                    self._validate_archive_members(
+                        (info.name for info in members), str(extract_path)
+                    )
+                    unsupported = [
+                        info.name for info in members
+                        if not (info.isfile() or info.isdir())
+                    ]
+                    if unsupported:
+                        raise ValueError(
+                            f"TAR 压缩包包含不支持的链接或设备: {unsupported[0]}"
+                        )
+                    archive.extractall(str(extract_path), members=members)
+            elif archive_type in {'gzip', 'bzip2', 'xz'}:
+                opener, suffix = {
+                    'gzip': (gzip.open, '.gz'),
+                    'bzip2': (bz2.open, '.bz2'),
+                    'xz': (lzma.open, '.xz'),
+                }[archive_type]
+                output_name = os.path.basename(archive_name)[:-len(suffix)]
+                if not output_name:
+                    raise ValueError(f"无法确定解压后的文件名: {archive_name}")
+                with opener(archive_name, 'rb') as source, (
+                    extract_path / output_name
+                ).open('wb') as target:
+                    shutil.copyfileobj(source, target)
+            else:
+                raise ValueError(f"未知的压缩类型: {archive_type}")
+            self._install_extracted_tree(extract_path, in_path)
 
     def _handle_file(self, file, item, is_platform_file=False):
         """统一处理单个文件"""
@@ -1155,9 +1168,8 @@ class InstallThread(QThread):
         )
         if file_type is None:
             destination = Path(in_path) / Path(file_path).name
-            self.recorder.prepare_file(destination)
             print(f"[DEBUG] 普通文件直接复制: {file_path} -> {destination}")
-            shutil.copy2(file_path, str(destination))
+            self.recorder.install_file(file_path, destination)
             return
 
         print(f"[DEBUG] 调用run_extract: archive={file_path}, type={file_type}, in_path={in_path}")
@@ -1207,8 +1219,9 @@ class InstallThread(QThread):
             self.recorder = InstallRecorder(
                 self.path,
                 INSTALLER_METADATA,
-                selected_components,
+                [self.items_by_id[component] for component in selected_components],
                 uninstaller_configuration,
+                core_component=get_metadata()["items"][MAIN_ITEM]["id"],
             )
             print(f"[DEBUG] 需要安装的组件数: {total_components}")
 
@@ -1221,7 +1234,9 @@ class InstallThread(QThread):
                 self.progress_updated.emit(
                     start_progress, f"正在安装组件 {component}..."
                 )
+                self.recorder.begin_component(component)
                 self._process_component(component)
+                self.recorder.finish_component(component)
 
                 completed_progress = 5 + int(index * 90 / total_components)
                 self.progress_updated.emit(
@@ -1600,6 +1615,8 @@ class ComponentsPage(BasePage):
                 tree_item.setFlags(
                     tree_item.flags() & ~Qt.ItemIsEnabled
                 )
+            if item.get("version"):
+                label = f"{label}  v{item['version']}"
             tree_item.setText(0, label)
 
         # Then attach nodes by stable ID instead of fuzzy display-name lookup.
@@ -1686,6 +1703,9 @@ class ComponentsPage(BasePage):
         description = self.items_by_id.get(component_key, {}).get(
             "desc", "未找到描述"
         )
+        version = self.items_by_id.get(component_key, {}).get("version")
+        if version:
+            description = f"<p><b>版本:</b> {version}</p>{description}"
 
         # 更新描述文本
         self.description_text.setHtml(description)

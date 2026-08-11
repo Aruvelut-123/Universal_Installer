@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import hashlib
 import json
 import os
 import platform
@@ -65,10 +66,72 @@ def _copy_file(source, destination):
     shutil.copy2(str(source), str(destination))
 
 
+def _file_digest(path):
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _manifest_components(manifest):
+    """Return normalized component records, including legacy manifests."""
+    if not isinstance(manifest, dict):
+        return []
+    records = manifest.get("components")
+    if isinstance(records, list):
+        normalized = []
+        for record in records:
+            if not isinstance(record, dict) or not isinstance(record.get("id"), str):
+                continue
+            normalized.append({
+                "id": record["id"],
+                "name": record.get("name", record["id"]),
+                "version": record.get("version"),
+                "dependencies": [
+                    value for value in record.get("dependencies", [])
+                    if isinstance(value, str)
+                ],
+                "required": bool(record.get("required", False)),
+            })
+        if normalized:
+            return normalized
+    return [
+        {
+            "id": component_id,
+            "name": component_id,
+            "dependencies": [],
+            "required": False,
+        }
+        for component_id in manifest.get("selected_components", [])
+        if isinstance(component_id, str)
+    ]
+
+
+def dependent_removal_closure(manifest, selected_components):
+    """Include installed dependents that cannot remain without selected items."""
+    selected = set(selected_components)
+    components = _manifest_components(manifest)
+    changed = True
+    while changed:
+        changed = False
+        for component in components:
+            if component["id"] in selected:
+                continue
+            if any(
+                dependency in selected
+                for dependency in component["dependencies"]
+            ):
+                selected.add(component["id"])
+                changed = True
+    return selected
+
+
 class InstallRecorder:
     """Record an installation transaction and retain originals for uninstall."""
 
-    def __init__(self, install_root, installer_metadata, component_ids, uninstaller):
+    def __init__(self, install_root, installer_metadata, components, uninstaller,
+                 core_component=None):
         self.install_root = Path(install_root).resolve()
         self.data_directory = self.install_root / INSTALL_DATA_DIRECTORY
         self.data_directory_preexisted = self.data_directory.exists()
@@ -81,7 +144,28 @@ class InstallRecorder:
             self.data_directory / "transactions" / transaction_name
         )
         self.installer_metadata = dict(installer_metadata)
-        self.component_ids = list(component_ids)
+        self.components = []
+        for component in components:
+            if isinstance(component, dict):
+                self.components.append({
+                    "id": component["id"],
+                    "name": component.get("name", component["id"]),
+                    "version": component.get("version"),
+                    "dependencies": list(component.get("dependencies", [])),
+                    "required": bool(component.get("required", False)),
+                })
+            else:
+                self.components.append({
+                    "id": component,
+                    "name": component,
+                    "version": None,
+                    "dependencies": [],
+                    "required": False,
+                })
+        self.component_ids = [component["id"] for component in self.components]
+        self.core_component = core_component or (
+            self.component_ids[0] if self.component_ids else None
+        )
         self.uninstaller = dict(uninstaller)
         self.previous_manifest = self._load_previous_manifest()
         self.files = {
@@ -98,6 +182,81 @@ class InstallRecorder:
         self.transaction_directories = []
         self.new_backups = []
         self.registry = self.previous_manifest.get("windows_registry")
+        self.current_component = None
+        self.touched_files = {}
+        self.skipped_files = 0
+
+        previous_components = _manifest_components(self.previous_manifest)
+        components_by_id = {
+            component["id"]: component for component in previous_components
+        }
+        components_by_id.update({
+            component["id"]: component for component in self.components
+        })
+        self.components = list(components_by_id.values())
+        self.component_ids = [component["id"] for component in self.components]
+
+        previous_ids = [
+            component["id"] for component in previous_components
+        ]
+        for entry in self.files.values():
+            owners = entry.get("components")
+            if not isinstance(owners, list):
+                entry["components"] = list(previous_ids)
+
+    def begin_component(self, component_id):
+        if component_id not in self.component_ids:
+            raise ValueError("组件不属于当前安装: {}".format(component_id))
+        self.current_component = component_id
+        self.touched_files[component_id] = set()
+
+    def finish_component(self, component_id):
+        """Remove files that belonged to an older version of this component."""
+        touched = self.touched_files.get(component_id, set())
+        stale = [
+            relative for relative, entry in self.files.items()
+            if component_id in entry.get("components", [])
+            and relative not in touched
+        ]
+        for relative in stale:
+            entry = self.files[relative]
+            entry["components"] = [
+                owner for owner in entry.get("components", [])
+                if owner != component_id
+            ]
+            if entry["components"]:
+                continue
+            if entry.get("managed", True):
+                self._snapshot_file(relative)
+                target = self.install_root / Path(relative)
+                if target.is_symlink():
+                    raise ValueError("拒绝删除替换了旧版文件的符号链接: {}".format(target))
+                if target.is_file():
+                    target.unlink()
+                elif target.exists():
+                    raise OSError("旧版组件文件已变成目录: {}".format(target))
+                backup = entry.get("backup")
+                if backup:
+                    _copy_file(self.data_directory / Path(backup), target)
+            del self.files[relative]
+
+    def _snapshot_file(self, relative):
+        if relative in self.transaction_files:
+            return
+        path = self.install_root / Path(relative)
+        existed = path.is_file()
+        transaction_backup = None
+        if existed:
+            transaction_backup = self.transaction_directory / relative
+            _copy_file(path, transaction_backup)
+        self.transaction_files[relative] = {
+            "existed": existed,
+            "snapshot": (
+                transaction_backup.relative_to(self.data_directory).as_posix()
+                if transaction_backup is not None
+                else None
+            ),
+        }
 
     def _load_previous_manifest(self):
         if not self.manifest_path.is_file():
@@ -152,24 +311,14 @@ class InstallRecorder:
         path = path.resolve()
         relative = self._relative_path(path)
         if relative in self.transaction_files:
+            self._record_file_owner(relative)
             return
         if path.exists() and not path.is_file():
             raise ValueError("文件安装目标已被目录占用: {}".format(path))
 
         self.prepare_directory(path.parent)
         existed = path.is_file()
-        transaction_backup = None
-        if existed:
-            transaction_backup = self.transaction_directory / relative
-            _copy_file(path, transaction_backup)
-        self.transaction_files[relative] = {
-            "existed": existed,
-            "snapshot": (
-                transaction_backup.relative_to(self.data_directory).as_posix()
-                if transaction_backup is not None
-                else None
-            ),
-        }
+        self._snapshot_file(relative)
 
         if relative not in self.files:
             original_backup = None
@@ -184,7 +333,56 @@ class InstallRecorder:
                     if original_backup is not None
                     else None
                 ),
+                "components": [],
+                "managed": True,
             }
+        elif not self.files[relative].get("managed", True):
+            original_backup = self.backup_directory / relative
+            if existed:
+                _copy_file(path, original_backup)
+                self.new_backups.append(original_backup)
+                self.files[relative]["backup"] = (
+                    original_backup.relative_to(self.data_directory).as_posix()
+                )
+            self.files[relative]["managed"] = True
+        self._record_file_owner(relative)
+
+    def _record_file_owner(self, relative):
+        if self.current_component is None:
+            return
+        owners = self.files[relative].setdefault("components", [])
+        if self.current_component not in owners:
+            owners.append(self.current_component)
+        self.touched_files.setdefault(self.current_component, set()).add(relative)
+
+    def install_file(self, source, destination):
+        """Install one file, skipping writes when its content is unchanged."""
+        source = Path(source)
+        destination = Path(destination)
+        source_digest = _file_digest(source)
+        destination_digest = None
+        if destination.is_file() and not destination.is_symlink():
+            destination_digest = _file_digest(destination)
+        if source_digest == destination_digest:
+            relative = self._relative_path(destination)
+            if relative not in self.files:
+                self.files[relative] = {
+                    "path": relative,
+                    "backup": None,
+                    "components": [],
+                    "managed": False,
+                }
+            self.files[relative]["sha256"] = source_digest
+            self._record_file_owner(relative)
+            self.skipped_files += 1
+            return False
+
+        self.prepare_file(destination)
+        _copy_file(source, destination)
+        relative = self._relative_path(destination)
+        self.files[relative]["sha256"] = source_digest
+        self.files[relative]["managed"] = True
+        return True
 
     def set_registry(self, registry):
         self.registry = dict(registry) if registry else None
@@ -201,13 +399,15 @@ class InstallRecorder:
 
     def finalize(self):
         manifest = {
-            "schema_version": 1,
+            "schema_version": 2,
             "program_name": self.installer_metadata["program_name"],
             "version": self.installer_metadata["version"],
             "publisher": self.installer_metadata["author"],
             "installed_at": datetime.now().astimezone().isoformat(),
             "install_root": str(self.install_root),
             "selected_components": self.component_ids,
+            "components": self.components,
+            "core_component": self.core_component,
             "uninstaller": self.uninstaller,
             "files": [self.files[key] for key in sorted(self.files)],
             "created_directories": sorted(
@@ -394,7 +594,7 @@ def load_manifest(manifest_path=None):
         manifest = _decode_manifest(path.read_bytes())
     except (OSError, ValueError) as error:
         raise RuntimeError("无法读取安装信息 {}: {}".format(path, error)) from error
-    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
+    if not isinstance(manifest, dict) or manifest.get("schema_version") not in (1, 2):
         raise ValueError("安装信息格式不受支持")
     install_root = Path(manifest.get("install_root", "")).resolve()
     expected_path = install_root / INSTALL_DATA_DIRECTORY / INSTALL_MANIFEST_NAME
@@ -420,11 +620,33 @@ def _current_uninstaller_container(install_root):
     return executable
 
 
-def uninstall(manifest_path, manifest):
+def uninstall(manifest_path, manifest, selected_components=None):
     install_root = Path(manifest["install_root"]).resolve()
     data_directory = install_root / INSTALL_DATA_DIRECTORY
     deferred = _current_uninstaller_container(install_root)
     errors = []
+
+    components = _manifest_components(manifest)
+    installed_ids = {component["id"] for component in components}
+    if selected_components is None:
+        selected = set(installed_ids)
+    else:
+        selected = set(selected_components)
+        unknown = selected - installed_ids
+        if unknown:
+            return ["安装信息中不存在组件: {}".format(
+                ", ".join(sorted(unknown))
+            )], deferred
+    if not selected:
+        return ["没有选择要卸载的组件"], deferred
+    remaining_ids = installed_ids - selected
+    remaining_components = [
+        component for component in components
+        if component["id"] in remaining_ids
+    ]
+    legacy_owners = [component["id"] for component in components]
+    retained_entries = []
+    removed_backups = []
 
     entries = [entry for entry in manifest.get("files", []) if isinstance(entry, dict)]
     entries.sort(key=lambda entry: len(Path(entry.get("path", "")).parts), reverse=True)
@@ -433,13 +655,32 @@ def uninstall(manifest_path, manifest):
         if not isinstance(relative, str):
             errors.append("安装信息包含无效文件路径")
             continue
+        owners = entry.get("components")
+        if not isinstance(owners, list):
+            owners = legacy_owners
+        owners = [owner for owner in owners if owner not in selected]
+        if owners:
+            retained = dict(entry)
+            retained["components"] = owners
+            retained_entries.append(retained)
+            continue
+
+        if not entry.get("managed", True):
+            continue
         target = (install_root / Path(relative)).absolute()
         try:
             target.relative_to(install_root.absolute())
         except ValueError:
             errors.append("拒绝删除安装目录之外的路径: {}".format(target))
             continue
-        if deferred is not None and (target == deferred or _is_relative_to(target, deferred)):
+        if (
+            remaining_ids
+            and deferred is not None
+            and (target == deferred or _is_relative_to(target, deferred))
+        ):
+            retained = dict(entry)
+            retained["components"] = sorted(remaining_ids)
+            retained_entries.append(retained)
             continue
         try:
             if target.is_symlink() or target.is_file():
@@ -454,31 +695,63 @@ def uninstall(manifest_path, manifest):
                 if not backup_path.is_file():
                     raise FileNotFoundError("备份文件不存在: {}".format(backup_path))
                 _copy_file(backup_path, target)
+                removed_backups.append(backup_path)
         except (OSError, ValueError) as error:
             errors.append("{}: {}".format(target, error))
 
-    for relative in sorted(
-        manifest.get("created_directories", []),
-        key=lambda value: len(Path(value).parts),
-        reverse=True,
-    ):
-        directory = (install_root / Path(relative)).absolute()
-        try:
-            directory.relative_to(install_root.absolute())
-        except ValueError:
-            errors.append("拒绝删除安装目录之外的目录: {}".format(directory))
-            continue
-        if deferred is not None and (directory == deferred or _is_relative_to(directory, deferred)):
-            continue
-        try:
-            directory.rmdir()
-        except OSError:
-            pass
+    if not remaining_ids:
+        for relative in sorted(
+            manifest.get("created_directories", []),
+            key=lambda value: len(Path(value).parts),
+            reverse=True,
+        ):
+            directory = (install_root / Path(relative)).absolute()
+            try:
+                directory.relative_to(install_root.absolute())
+            except ValueError:
+                errors.append("拒绝删除安装目录之外的目录: {}".format(directory))
+                continue
+            if deferred is not None and (directory == deferred or _is_relative_to(directory, deferred)):
+                continue
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
 
     if errors:
         return errors, deferred
 
-    remove_windows_uninstall_entry(manifest.get("windows_registry"))
+    core_component = manifest.get("core_component")
+    if not isinstance(core_component, str):
+        core_component = components[0]["id"] if components else None
+    core_removed = core_component in selected
+    if core_removed or not remaining_ids:
+        remove_windows_uninstall_entry(manifest.get("windows_registry"))
+
+    if remaining_ids:
+        updated_manifest = dict(manifest)
+        updated_manifest.update({
+            "schema_version": 2,
+            "selected_components": [
+                component["id"] for component in remaining_components
+            ],
+            "components": remaining_components,
+            "files": sorted(retained_entries, key=lambda entry: entry["path"]),
+            "windows_registry": (
+                None if core_removed else manifest.get("windows_registry")
+            ),
+        })
+        try:
+            _atomic_write_manifest(Path(manifest_path), updated_manifest)
+            for backup in removed_backups:
+                try:
+                    backup.unlink()
+                except OSError:
+                    pass
+        except OSError as error:
+            errors.append("无法更新安装信息: {}".format(error))
+        return errors, None
+
     try:
         shutil.rmtree(str(data_directory))
     except OSError as error:
@@ -512,28 +785,122 @@ def configure_high_dpi(QApplication, Qt, binding):
 def run_gui(manifest_path, manifest):
     try:
         from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QApplication, QMessageBox
+        from PySide6.QtWidgets import (
+            QApplication, QDialog, QDialogButtonBox, QLabel, QMessageBox,
+            QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+        )
         binding = "PySide6"
     except ImportError:
         from PySide2.QtCore import Qt
-        from PySide2.QtWidgets import QApplication, QMessageBox
+        from PySide2.QtWidgets import (
+            QApplication, QDialog, QDialogButtonBox, QLabel, QMessageBox,
+            QTreeWidget, QTreeWidgetItem, QVBoxLayout,
+        )
         binding = "PySide2"
 
     configure_high_dpi(QApplication, Qt, binding)
     app = QApplication(sys.argv)
     program_name = manifest.get("program_name", "程序")
     app.setApplicationName("{} 卸载程序".format(program_name))
+    components = _manifest_components(manifest)
+    dialog = QDialog()
+    dialog.setWindowTitle("卸载 {}".format(program_name))
+    layout = QVBoxLayout(dialog)
+    layout.addWidget(QLabel("选择要卸载的组件。未选择的组件及共享文件会保留。"))
+    tree = QTreeWidget()
+    tree.setHeaderLabels(("组件", "版本", "依赖"))
+    items_by_id = {}
+    for component in components:
+        item = QTreeWidgetItem(tree)
+        item.setText(0, component["name"])
+        item.setText(1, component.get("version") or "—")
+        item.setText(2, ", ".join(component["dependencies"]) or "—")
+        item.setData(0, Qt.UserRole, component["id"])
+        item.setCheckState(0, Qt.Unchecked)
+        items_by_id[component["id"]] = item
+    tree.resizeColumnToContents(0)
+    layout.addWidget(tree)
+
+    changing_selection = [False]
+
+    def selected_component_ids():
+        return {
+            component_id for component_id, item in items_by_id.items()
+            if item.checkState(0) == Qt.Checked
+        }
+
+    def on_component_changed(item, _column):
+        if changing_selection[0]:
+            return
+        if item.checkState(0) != Qt.Checked:
+            selected_now = selected_component_ids()
+            component_id = item.data(0, Qt.UserRole)
+            component = next(
+                value for value in components if value["id"] == component_id
+            )
+            if any(
+                dependency in selected_now
+                for dependency in component["dependencies"]
+            ):
+                changing_selection[0] = True
+                item.setCheckState(0, Qt.Checked)
+                changing_selection[0] = False
+                QMessageBox.information(
+                    dialog,
+                    "无法保留依赖组件",
+                    "该组件依赖一个已选择卸载的组件。请先取消勾选它的依赖。",
+                )
+            return
+        selected_now = selected_component_ids()
+        expanded = dependent_removal_closure(manifest, selected_now)
+        added = expanded - selected_now
+        if not added:
+            return
+        names = ", ".join(
+            items_by_id[component_id].text(0)
+            for component_id in sorted(added)
+        )
+        reply = QMessageBox.warning(
+            dialog,
+            "组件依赖警告",
+            "以下组件依赖所选组件，也必须一起卸载：\n\n{}\n\n"
+            "选择继续会自动勾选它们；选择取消会撤销本次勾选。".format(names),
+            QMessageBox.Ok | QMessageBox.Cancel,
+            QMessageBox.Cancel,
+        )
+        changing_selection[0] = True
+        try:
+            if reply == QMessageBox.Ok:
+                for component_id in added:
+                    items_by_id[component_id].setCheckState(0, Qt.Checked)
+            else:
+                item.setCheckState(0, Qt.Unchecked)
+        finally:
+            changing_selection[0] = False
+
+    tree.itemChanged.connect(on_component_changed)
+    buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    layout.addWidget(buttons)
+    if dialog.exec() != QDialog.Accepted:
+        return 0
+
+    selected = selected_component_ids()
+    if not selected:
+        QMessageBox.information(None, "未选择组件", "没有选择要卸载的组件。")
+        return 0
     reply = QMessageBox.question(
         None,
-        "卸载 {}".format(program_name),
-        "确定要卸载 {} 吗？\n\n只会移除安装器记录的文件，安装前被覆盖的文件将恢复。".format(program_name),
+        "确认卸载",
+        "只会移除所选组件独占的文件，共享文件会保留；安装前被覆盖的文件将恢复。",
         QMessageBox.Yes | QMessageBox.No,
         QMessageBox.No,
     )
     if reply != QMessageBox.Yes:
         return 0
 
-    errors, deferred = uninstall(manifest_path, manifest)
+    errors, deferred = uninstall(manifest_path, manifest, selected)
     if errors:
         QMessageBox.critical(
             None,
@@ -543,7 +910,13 @@ def run_gui(manifest_path, manifest):
             ),
         )
         return 1
-    QMessageBox.information(None, "卸载完成", "{} 已成功卸载。".format(program_name))
+    all_removed = selected == {component["id"] for component in components}
+    message = (
+        "{} 已成功卸载。".format(program_name)
+        if all_removed
+        else "所选组件已成功卸载，其他组件和安装信息已保留。"
+    )
+    QMessageBox.information(None, "卸载完成", message)
     try:
         remove_running_uninstaller(deferred)
     except OSError as error:
