@@ -190,7 +190,8 @@ jobs:
             "libXext.so.6" "libXi.so.6" "libXrender.so.1"
             "libXcursor.so.1" "libXfixes.so.3" "libXrandr.so.2"
             "libXdamage.so.1" "libXcomposite.so.1" "libdrm.so.2"
-            "libgbm.so.1"
+            "libgbm.so.1" "libwayland-client.so.0" "libwayland-cursor.so.0"
+            "libwayland-egl.so.1" "libxkbcommon-x11.so.0"
           )
           
           for lib in "${LIBRARIES[@]}"; do
@@ -319,7 +320,8 @@ jobs:
             "libXext.so.6" "libXi.so.6" "libXrender.so.1"
             "libXcursor.so.1" "libXfixes.so.3" "libXrandr.so.2"
             "libXdamage.so.1" "libXcomposite.so.1" "libdrm.so.2"
-            "libgbm.so.1"
+            "libgbm.so.1" "libwayland-client.so.0" "libwayland-cursor.so.0"
+            "libwayland-egl.so.1" "libxkbcommon-x11.so.0"
           )
           for lib in "${LIBRARIES[@]}"; do
             find /usr/lib -name "$lib" 2>/dev/null | head -1 | xargs -r cp -t UninstallerAppDir/usr/lib/ || true

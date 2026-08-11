@@ -14,6 +14,10 @@ import zlib
 from datetime import datetime
 from pathlib import Path
 
+from linux_display import configure_linux_qt_platform
+
+configure_linux_qt_platform()
+
 
 INSTALL_DATA_DIRECTORY = ".universal_installer"
 INSTALL_MANIFEST_NAME = "install_info.uim"

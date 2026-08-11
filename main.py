@@ -24,6 +24,10 @@ from pathlib import Path
 import traceback
 from typing import Any
 
+from linux_display import configure_linux_qt_platform
+
+configure_linux_qt_platform()
+
 from uninstaller import (
     INSTALL_DATA_DIRECTORY,
     INSTALL_MANIFEST_NAME,
