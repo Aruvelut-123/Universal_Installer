@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import errno
 import hashlib
 import json
 import os
@@ -659,6 +660,53 @@ def _resolve_uninstall_directory(install_root, configured_path):
     return path
 
 
+def _empty_parent_directories(path, install_root):
+    """Yield removable parents below the installation root."""
+    root = Path(install_root).absolute()
+    current = Path(path).absolute().parent
+    while current != root:
+        try:
+            current.relative_to(root)
+        except ValueError:
+            break
+        if current.name == INSTALL_DATA_DIRECTORY:
+            break
+        yield current
+        current = current.parent
+
+
+def _remove_empty_directories(install_root, directories, deferred=None):
+    """Remove safe empty directories, retaining non-empty/user-owned folders."""
+    root = Path(install_root).resolve()
+    data_directory = root / INSTALL_DATA_DIRECTORY
+    errors = []
+    for directory in sorted(
+        {Path(value).absolute() for value in directories},
+        key=lambda value: len(value.parts),
+        reverse=True,
+    ):
+        if directory in (root, data_directory):
+            continue
+        try:
+            directory.relative_to(root)
+            directory.resolve().relative_to(root)
+        except (OSError, ValueError):
+            errors.append("拒绝删除安装目录之外的目录: {}".format(directory))
+            continue
+        if deferred is not None and (
+            directory == deferred or _is_relative_to(directory, deferred)
+        ):
+            continue
+        try:
+            directory.rmdir()
+        except FileNotFoundError:
+            pass
+        except OSError as error:
+            if error.errno not in (errno.ENOTEMPTY, errno.EEXIST, errno.ENOTDIR):
+                errors.append("{}: {}".format(directory, error))
+    return errors
+
+
 def uninstall(manifest_path, manifest, selected_components=None):
     install_root = Path(manifest["install_root"]).resolve()
     data_directory = install_root / INSTALL_DATA_DIRECTORY
@@ -687,6 +735,7 @@ def uninstall(manifest_path, manifest, selected_components=None):
     retained_entries = []
     removed_backups = []
     deferred_removal_requested = False
+    empty_directory_candidates = set()
 
     entries = [entry for entry in manifest.get("files", []) if isinstance(entry, dict)]
     entries.sort(key=lambda entry: len(Path(entry.get("path", "")).parts), reverse=True)
@@ -732,6 +781,9 @@ def uninstall(manifest_path, manifest, selected_components=None):
                     raise FileNotFoundError("备份文件不存在: {}".format(backup_path))
                 _copy_file(backup_path, target)
                 removed_backups.append(backup_path)
+            empty_directory_candidates.update(
+                _empty_parent_directories(target, install_root)
+            )
         except (OSError, ValueError) as error:
             errors.append("{}: {}".format(target, error))
 
@@ -764,25 +816,19 @@ def uninstall(manifest_path, manifest, selected_components=None):
                     raise OSError("卸载目录目标不是目录")
             except OSError as error:
                 errors.append("{}: {}".format(directory, error))
+            empty_directory_candidates.update(
+                _empty_parent_directories(directory, install_root)
+            )
 
-    if not remaining_ids:
-        for relative in sorted(
-            manifest.get("created_directories", []),
-            key=lambda value: len(Path(value).parts),
-            reverse=True,
-        ):
-            directory = (install_root / Path(relative)).absolute()
-            try:
-                directory.relative_to(install_root.absolute())
-            except ValueError:
-                errors.append("拒绝删除安装目录之外的目录: {}".format(directory))
-                continue
-            if deferred is not None and (directory == deferred or _is_relative_to(directory, deferred)):
-                continue
-            try:
-                directory.rmdir()
-            except OSError:
-                pass
+    for relative in manifest.get("created_directories", []):
+        directory = (install_root / Path(relative)).absolute()
+        empty_directory_candidates.add(directory)
+        empty_directory_candidates.update(
+            _empty_parent_directories(directory, install_root)
+        )
+    errors.extend(_remove_empty_directories(
+        install_root, empty_directory_candidates, deferred
+    ))
 
     if errors:
         return errors, deferred

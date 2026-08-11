@@ -148,6 +148,32 @@ class ComponentUninstallTests(unittest.TestCase):
         _, updated = uninstaller.load_manifest(manifest_path)
         self.assertEqual(updated["windows_registry"], manifest["windows_registry"])
 
+    def test_partial_uninstall_removes_only_directories_left_empty(self):
+        temporary, root, manifest_path, manifest = self.make_installation()
+        self.addCleanup(temporary.cleanup)
+        removable = root / "Mods" / "Core" / "cache" / "generated.txt"
+        removable.parent.mkdir(parents=True)
+        removable.write_bytes(b"generated")
+        retained = root / "Mods" / "keep-user-file.txt"
+        retained.write_bytes(b"user")
+        manifest["files"].append({
+            "path": "Mods/Core/cache/generated.txt",
+            "backup": None,
+            "components": ["core"],
+        })
+        manifest["created_directories"] = [
+            "Mods", "Mods/Core", "Mods/Core/cache"
+        ]
+
+        errors, _ = uninstaller.uninstall(
+            manifest_path, manifest, {"core"}
+        )
+
+        self.assertEqual(errors, [])
+        self.assertFalse((root / "Mods" / "Core").exists())
+        self.assertTrue(retained.is_file())
+        self.assertTrue((root / "Mods").is_dir())
+
     def test_configured_uninstall_directories_cannot_escape_install_root(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory) / "install"
