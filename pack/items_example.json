@@ -1,108 +1,108 @@
 {
-  "uninstaller": {
-    "windows": {
-      "file": "pack/uninstall-windows.exe",
-      "executable": "uninstall-windows.exe"
+    "uninstaller": {
+        "windows": {
+            "file": "pack/uninstall-windows.exe",
+            "executable": "uninstall-windows.exe"
+        },
+        "linux": {
+            "file": "pack/uninstall-linux.AppImage",
+            "executable": "uninstall-linux.AppImage"
+        },
+        "darwin": {
+            "file": "pack/uninstall-macos.zip",
+            "executable": "uninstall-macos.app/Contents/MacOS/uninstaller"
+        }
     },
-    "linux": {
-      "file": "pack/uninstall-linux.AppImage",
-      "executable": "uninstall-linux.AppImage"
-    },
-    "darwin": {
-      "file": "pack/uninstall-macos.zip",
-      "executable": "uninstall-macos.app/Contents/MacOS/uninstaller"
-    }
-  },
-  "items": [
-    {
-      "name": "Shared runtime",
-      "id": "runtime",
-      "version": "5.0.0",
-      "required": true,
-      "checked": true,
-      "desc": "<b>Shared runtime</b>: files used by the core and add-ons.",
-      "after": null,
-      "dependencies": [],
-      "files": null,
-      "winx86file": [
-        "pack/runtime-windows-x86.zip",
-        "pack/uninstall-windows.exe"
-      ],
-      "winx64file": [
-        "pack/runtime-windows-x64.zip",
-        "pack/uninstall-windows.exe"
-      ],
-      "linuxx64file": [
-        "pack/runtime-linux-x64.zip",
-        "pack/uninstall-linux.AppImage"
-      ],
-      "macfile": [
-        "pack/runtime-macos.zip",
-        "pack/uninstall-macos.zip"
-      ],
-      "actions": {
-        "pack/runtime-windows-x86.zip": "{install_path}",
-        "pack/runtime-windows-x64.zip": "{install_path}",
-        "pack/runtime-linux-x64.zip": "{install_path}",
-        "pack/runtime-macos.zip": "{install_path}",
-        "pack/uninstall-windows.exe": "{install_path}",
-        "pack/uninstall-linux.AppImage": "{install_path}",
-        "pack/uninstall-macos.zip": "{install_path}"
-      }
-    },
-    {
-      "name": "Application core",
-      "id": "core",
-      "version": "2.1.0",
-      "required": true,
-      "checked": true,
-      "desc": "<b>Application core</b>: the main removable component.",
-      "default_path": "C:\\Program Files\\ExampleApplication",
-      "default_path_linux": "/opt/example-application",
-      "default_path_macos": "/Applications/ExampleApplication",
-      "after": null,
-      "dependencies": [
-        "runtime"
-      ],
-      "files": [
-        "pack/application-core.zip",
-        "pack/readme.txt"
-      ],
-      "actions": {
-        "pack/application-core.zip": "{install_path}",
-        "pack/readme.txt": "{install_path}"
-      }
-    },
-    {
-      "name": "Optional add-ons",
-      "id": "addons",
-      "required": false,
-      "checked": false,
-      "part_checked": true,
-      "desc": "Grouping-only entry; components without files may omit version.",
-      "after": null,
-      "dependencies": [],
-      "files": null,
-      "actions": null
-    },
-    {
-      "name": "Example add-on",
-      "id": "example_addon",
-      "version": "1.2.3",
-      "required": false,
-      "checked": false,
-      "desc": "<b>Example add-on</b>: demonstrates dependencies and nesting.",
-      "after": "addons",
-      "dependencies": [
-        "runtime",
-        "core"
-      ],
-      "files": [
-        "pack/example-addon.zip"
-      ],
-      "actions": {
-        "pack/example-addon.zip": "{install_path}/plugins"
-      }
-    }
-  ]
+    "items": [
+        {
+            "name": "Shared runtime",
+            "id": "runtime",
+            "version": "5.0.0",
+            "required": true,
+            "checked": true,
+            "desc": "<b>Shared runtime</b>: files used by the core and add-ons.",
+            "after": null,
+            "dependencies": [],
+            "files": null,
+            "winx86file": [
+                "pack/runtime-windows-x86.zip",
+                "pack/uninstall-windows.exe"
+            ],
+            "winx64file": [
+                "pack/runtime-windows-x64.zip",
+                "pack/uninstall-windows.exe"
+            ],
+            "linuxx64file": [
+                "pack/runtime-linux-x64.zip",
+                "pack/uninstall-linux.AppImage"
+            ],
+            "macfile": [
+                "pack/runtime-macos.zip",
+                "pack/uninstall-macos.zip"
+            ],
+            "actions": {
+                "pack/runtime-windows-x86.zip": "{install_path}",
+                "pack/runtime-windows-x64.zip": "{install_path}",
+                "pack/runtime-linux-x64.zip": "{install_path}",
+                "pack/runtime-macos.zip": "{install_path}",
+                "pack/uninstall-windows.exe": "{install_path}",
+                "pack/uninstall-linux.AppImage": "{install_path}",
+                "pack/uninstall-macos.zip": "{install_path}"
+            }
+        },
+        {
+            "name": "Application core",
+            "id": "core",
+            "version": "2.1.0",
+            "required": true,
+            "checked": true,
+            "desc": "<b>Application core</b>: the main removable component.",
+            "default_path": "C:\\Program Files\\ExampleApplication",
+            "default_path_linux": "/opt/example-application",
+            "default_path_macos": "/Applications/ExampleApplication",
+            "after": null,
+            "dependencies": [
+                "runtime"
+            ],
+            "files": [
+                "pack/application-core.zip",
+                "pack/readme.txt"
+            ],
+            "actions": {
+                "pack/application-core.zip": "{install_path}",
+                "pack/readme.txt": "{install_path}"
+            }
+        },
+        {
+            "name": "Optional add-ons",
+            "id": "addons",
+            "required": false,
+            "checked": false,
+            "part_checked": true,
+            "desc": "Grouping-only entry; components without files may omit version.",
+            "after": null,
+            "dependencies": [],
+            "files": null,
+            "actions": null
+        },
+        {
+            "name": "Example add-on",
+            "id": "example_addon",
+            "version": "1.2.3",
+            "required": false,
+            "checked": false,
+            "desc": "<b>Example add-on</b>: demonstrates dependencies and nesting.",
+            "after": "addons",
+            "dependencies": [
+                "runtime",
+                "core"
+            ],
+            "files": [
+                "pack/example-addon.zip"
+            ],
+            "actions": {
+                "pack/example-addon.zip": "{install_path}/plugins"
+            }
+        }
+    ]
 }

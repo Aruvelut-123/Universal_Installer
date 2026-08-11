@@ -187,6 +187,46 @@ except ImportError:
 print(f"Qt binding: {QT_BINDING}")
 installer_metadata: dict[str, Any] | None = None
 
+INSTALLER_METADATA_ALIASES = {
+    "product_name": "short_name",
+    "publisher": "author",
+    "requires_admin": "need_admin",
+    "includes_uninstaller": "has_uninstaller",
+    "core_component_index": "main_item",
+    "component_metadata_file": "item_metadata",
+    "product_registry_key": "registry_key",
+    "footer_text": "footer_info",
+    "license_path": "license_file",
+    "sidebar_image": "left_pic",
+    "header_image": "header_pic",
+    "icon_file": "icon",
+    "directory_title": "select_directory_title",
+    "directory_help": "select_directory_tip",
+}
+
+COMPONENT_METADATA_ALIASES = {
+    "display_name": "name",
+    "component_id": "id",
+    "selected_by_default": "checked",
+    "partially_selected_by_default": "part_checked",
+    "description": "desc",
+    "parent_component": "after",
+    "common_files": "files",
+    "windows_x86_files": "winx86file",
+    "windows_x64_files": "winx64file",
+    "windows_arm64_files": "winarm64file",
+    "linux_x86_files": "linuxx86file",
+    "linux_x64_files": "linuxx64file",
+    "linux_arm64_files": "linuxarm64file",
+    "macos_files": "macfile",
+    "generic_x86_files": "x86file",
+    "generic_x64_files": "x64file",
+    "destinations": "actions",
+    "default_install_path": "default_path",
+    "default_linux_install_path": "default_path_linux",
+    "default_macos_install_path": "default_path_macos",
+}
+
 
 def configure_high_dpi() -> None:
     """Enable device-independent Qt 5 scaling before QApplication exists."""
@@ -230,6 +270,10 @@ def get_installer_metadata() -> dict:
 
     if not isinstance(data, dict):
         raise ValueError("metadata.json 的顶层必须是对象")
+    data = dict(data)
+    for readable_key, internal_key in INSTALLER_METADATA_ALIASES.items():
+        if internal_key not in data and readable_key in data:
+            data[internal_key] = data[readable_key]
     missing = REQUIRED_INSTALLER_METADATA - data.keys()
     if missing:
         raise ValueError(f"metadata.json 缺少字段: {', '.join(sorted(missing))}")
@@ -281,10 +325,25 @@ def get_metadata() -> dict:
     except (OSError, json.JSONDecodeError) as error:
         raise RuntimeError(f"无法读取组件配置 {metadata_path}: {error}") from error
 
+    if isinstance(data, dict) and "items" not in data and "components" in data:
+        data = dict(data)
+        data["items"] = data["components"]
     if not isinstance(data, dict) or not isinstance(data.get("items"), list):
-        raise ValueError(f"{metadata_path} 必须包含 items 数组")
+        raise ValueError(f"{metadata_path} 必须包含 components 数组")
     if not data["items"]:
-        raise ValueError(f"{metadata_path} 的 items 不能为空")
+        raise ValueError(f"{metadata_path} 的 components 不能为空")
+
+    normalized_items = []
+    for raw_item in data["items"]:
+        if not isinstance(raw_item, dict):
+            normalized_items.append(raw_item)
+            continue
+        item = dict(raw_item)
+        for readable_key, internal_key in COMPONENT_METADATA_ALIASES.items():
+            if internal_key not in item and readable_key in item:
+                item[internal_key] = item[readable_key]
+        normalized_items.append(item)
+    data["items"] = normalized_items
 
     if INSTALLER_METADATA["has_uninstaller"]:
         uninstaller = data.get("uninstaller")
@@ -296,6 +355,15 @@ def get_metadata() -> dict:
                 raise ValueError(
                     f"{metadata_path} 的 uninstaller.{system_name} 必须是对象"
                 )
+            configuration = dict(configuration)
+            if "file" not in configuration and "source_file" in configuration:
+                configuration["file"] = configuration["source_file"]
+            if (
+                "executable" not in configuration
+                and "installed_executable" in configuration
+            ):
+                configuration["executable"] = configuration["installed_executable"]
+            uninstaller[system_name] = configuration
             invalid_fields = [
                 field
                 for field in ("file", "executable")

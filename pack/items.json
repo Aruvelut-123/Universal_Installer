@@ -1,351 +1,351 @@
 {
-  "uninstaller": {
-    "windows": {
-      "file": "pack/uninstall-windows-x86.exe",
-      "executable": "uninstall-windows-x86.exe"
+    "uninstaller": {
+        "windows": {
+            "file": "pack/uninstall-windows-x86.exe",
+            "executable": "uninstall-windows-x86.exe"
+        },
+        "linux": {
+            "file": "pack/uninstall-linux-x64.AppImage",
+            "executable": "uninstall-linux-x64.AppImage"
+        },
+        "darwin": {
+            "file": "pack/uninstall-macos.zip",
+            "executable": "uninstall-macos.app/Contents/MacOS/uninstaller"
+        }
     },
-    "linux": {
-      "file": "pack/uninstall-linux-x64.AppImage",
-      "executable": "uninstall-linux-x64.AppImage"
-    },
-    "darwin": {
-      "file": "pack/uninstall-macos.zip",
-      "executable": "uninstall-macos.app/Contents/MacOS/uninstaller"
-    }
-  },
-  "items": [
-    {
-      "name": "BB+ 汉化包",
-      "required": true,
-      "checked": true,
-      "id": "main",
-      "version": "1.18.4",
-      "desc": "<b>BB+ 汉化包</b>: 主汉化程序，必选组件",
-      "default_path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Baldi's Basics Plus",
-      "after": null,
-      "dependencies": [
-        "bepinex_runtime"
-      ],
-      "files": [
-        "pack/BBPC.zip",
-        "pack/readme.txt"
-      ],
-      "actions": {
-        "pack/BBPC.zip": "{install_path}",
-        "pack/readme.txt": "{install_path}"
-      }
-    },
-    {
-      "name": "BepInEx 运行环境",
-      "required": true,
-      "checked": true,
-      "id": "bepinex_runtime",
-      "version": "5.4.23.5",
-      "desc": "<b>BepInEx 运行环境</b>: 模组加载器和卸载器；卸载汉化核心时会保留",
-      "after": null,
-      "dependencies": [],
-      "files": null,
-      "winx86file": [
-        "pack/WINBepInEx86.zip",
-        "pack/uninstall-windows-x86.exe"
-      ],
-      "winx64file": [
-        "pack/WINBepInEx64.zip",
-        "pack/uninstall-windows-x86.exe"
-      ],
-      "linuxx86file": [
-        "pack/LINUXBepInEx86.zip"
-      ],
-      "linuxx64file": [
-        "pack/LINUXBepInEx64.zip",
-        "pack/uninstall-linux-x64.AppImage"
-      ],
-      "macfile": [
-        "pack/MACBepInEx.zip",
-        "pack/uninstall-macos.zip"
-      ],
-      "actions": {
-        "pack/WINBepInEx86.zip": "{install_path}",
-        "pack/WINBepInEx64.zip": "{install_path}",
-        "pack/LINUXBepInEx86.zip": "{install_path}",
-        "pack/LINUXBepInEx64.zip": "{install_path}",
-        "pack/MACBepInEx.zip": "{install_path}",
-        "pack/uninstall-windows-x86.exe": "{install_path}",
-        "pack/uninstall-linux-x64.AppImage": "{install_path}",
-        "pack/uninstall-macos.zip": "{install_path}"
-      }
-    },
-    {
-      "name": "其他模组",
-      "required": false,
-      "checked": true,
-      "part_checked": true,
-      "id": "other_mods",
-      "desc": "<b>其他模组</b>: 可选附加模组",
-      "after": null,
-      "dependencies": [
-        "bepinex_runtime"
-      ],
-      "files": null,
-      "actions": null
-    },
-    {
-      "name": "模组API (大多数模组的前置)",
-      "required": true,
-      "checked": true,
-      "id": "modding_api",
-      "version": "11.1.0.2",
-      "desc": "<b>模组API</b>: 所有模组运行的基础，安装后可以加载其他模组",
-      "after": "other_mods",
-      "dependencies": [
-        "bepinex_runtime"
-      ],
-      "files": [
-        "pack/BBDevAPI.zip"
-      ],
-      "actions": {
-        "pack/BBDevAPI.zip": "{install_path}"
-      }
-    },
-    {
-      "name": "PineDebug",
-      "required": false,
-      "checked": false,
-      "id": "pine_debug",
-      "version": "0.3.5",
-      "desc": "<b>PineDebug</b>: BB+ 的修改器而已, 这还有什么可以介绍的么?",
-      "after": "other_mods",
-      "dependencies": [
-        "bepinex_runtime",
-        "modding_api"
-      ],
-      "files": [
-        "pack/PineDebug.zip"
-      ],
-      "actions": {
-        "pack/PineDebug.zip": "{install_path}"
-      }
-    },
-    {
-      "name": "关卡加载API",
-      "required": false,
-      "checked": false,
-      "part_checked": false,
-      "id": "level_loading_api",
-      "version": "1.12.2.0",
-      "desc": "<b>关卡加载API</b>: 用于加载自定义关卡的API",
-      "after": "other_mods",
-      "dependencies": [
-        "bepinex_runtime",
-        "modding_api"
-      ],
-      "files": [
-        "pack/LevelLoader.zip"
-      ],
-      "actions": {
-        "pack/LevelLoader.zip": "{install_path}/BepInEx/plugins"
-      }
-    },
-    {
-      "name": "关卡编辑器",
-      "required": false,
-      "checked": false,
-      "part_checked": false,
-      "id": "level_editor",
-      "version": "1.8.3.2",
-      "desc": "<b>关卡编辑器</b>: 用于自定义关卡的模组",
-      "after": "other_mods",
-      "dependencies": [
-        "bepinex_runtime",
-        "modding_api",
-        "level_loading_api"
-      ],
-      "files": [
-        "pack/LevelEditor.zip"
-      ],
-      "actions": {
-        "pack/LevelEditor.zip": "{install_path}"
-      }
-    },
-    {
-      "name": "Pixel的内部API",
-      "required": false,
-      "checked": false,
-      "part_checked": false,
-      "id": "pixel_internal_api",
-      "version": "1.2.7.1",
-      "desc": "<b>Pixel的内部API</b>: PixelGuy用来开发模组而编写的API",
-      "after": "other_mods",
-      "dependencies": [
-        "bepinex_runtime",
-        "modding_api"
-      ],
-      "files": [
-        "pack/PIAPI.zip"
-      ],
-      "actions": {
-        "pack/PIAPI.zip": "{install_path}/BepInEx/plugins"
-      }
-    },
-    {
-      "name": "模组管理器",
-      "required": false,
-      "checked": false,
-      "part_checked": false,
-      "id": "mod_manager",
-      "version": "2.1.1",
-      "desc": "<b>模组管理器</b>: 每次禁用模组都要从文件夹里删除文件，是不是很麻烦？现在你可以下载这个模组，直接在游戏里禁用模组，无需删除任何文件！它还能显示模组信息，并且允许你在不重启游戏的情况下下载模组。",
-      "after": "other_mods",
-      "dependencies": [
-        "bepinex_runtime",
-        "modding_api"
-      ],
-      "files": [
-        "pack/ModManager.zip"
-      ],
-      "actions": {
-        "pack/ModManager.zip": "{install_path}/BepInEx/plugins"
-      }
-    },
-    {
-      "name": "Carnival Pack",
-      "required": false,
-      "checked": false,
-      "part_checked": false,
-      "id": "carnival_pack",
-      "version": "3.1.0.1",
-      "desc": "<b>Carnival Pack</b>: 哇！狂欢节来到了这里，现在又多了一个新角色（Zorpster）和一件新物品！（棉花糖",
-      "after": "other_mods",
-      "dependencies": [
-        "bepinex_runtime",
-        "modding_api"
-      ],
-      "files": [
-        "pack/CarnivalPack.zip"
-      ],
-      "actions": {
-        "pack/CarnivalPack.zip": "{install_path}"
-      }
-    },
-    {
-      "name": "Modifiers Disaster! Plus",
-      "required": false,
-      "checked": false,
-      "part_checked": false,
-      "id": "modifiers_disaster_plus",
-      "version": "1.0",
-      "desc": "<b>Modifiers Disaster! Plus</b>: 这个模组添加了一些修改器，会以各种疯狂的方式改变游戏！有点像BBCR，但又不太一样……",
-      "after": "other_mods",
-      "dependencies": [
-        "bepinex_runtime",
-        "modding_api",
-        "pixel_internal_api"
-      ],
-      "files": [
-        "pack/Modifiers.zip"
-      ],
-      "actions": {
-        "pack/Modifiers.zip": "{install_path}"
-      }
-    },
-    {
-      "name": "Micro Events!",
-      "required": false,
-      "checked": false,
-      "part_checked": false,
-      "id": "micro_events",
-      "version": "2.1",
-      "desc": "<b>Micro Events!</b>: 这个模组引入了微事件的概念！微事件是一个独立的系统，其中可能发生好事或坏事，目前已有超过100个微事件和10多种独特的贴纸，可以以各种意想不到的方式改变微事件的运作方式！希望您能玩得开心！因为制作这个模组花费了我大量的心血。",
-      "after": "other_mods",
-      "dependencies": [
-        "bepinex_runtime",
-        "modding_api",
-        "pixel_internal_api"
-      ],
-      "files": [
-        "pack/MicroEvents.zip"
-      ],
-      "actions": {
-        "pack/MicroEvents.zip": "{install_path}"
-      }
-    },
-    {
-      "name": "可修改的游戏模式API",
-      "required": false,
-      "checked": false,
-      "part_checked": false,
-      "id": "modded_modes_api",
-      "version": "1.2.0",
-      "desc": "<b>可修改的游戏模式API</b>: 你的模组需要为游戏添加自定义界面或模式吗？这个 API 会让你的工作更轻松！",
-      "after": "other_mods",
-      "dependencies": [
-        "bepinex_runtime"
-      ],
-      "files": [
-        "pack/MMAPI.zip"
-      ],
-      "actions": {
-        "pack/MMAPI.zip": "{install_path}/BepInEx/plugins"
-      }
-    },
-    {
-      "name": "Null Style",
-      "required": false,
-      "checked": false,
-      "part_checked": false,
-      "id": "null_style",
-      "version": "1.3.0",
-      "desc": "<b>Null Style</b>: 感受与 Null 随机生成的激烈战斗！Null 模式现已加入 BB+！",
-      "after": "other_mods",
-      "dependencies": [
-        "bepinex_runtime",
-        "modding_api",
-        "pixel_internal_api",
-        "modded_modes_api"
-      ],
-      "files": [
-        "pack/NULLStyle.zip"
-      ],
-      "actions": {
-        "pack/NULLStyle.zip": "{install_path}"
-      }
-    },
-    {
-      "name": "材质包模组",
-      "required": false,
-      "checked": false,
-      "part_checked": false,
-      "id": "texture_pack",
-      "version": "3.3.0.1",
-      "desc": "<b>材质包模组</b>: 向 BB+ 添加材质包系统！",
-      "after": "other_mods",
-      "dependencies": [
-        "bepinex_runtime",
-        "modding_api"
-      ],
-      "files": [
-        "pack/TexturePack.zip"
-      ],
-      "actions": {
-        "pack/TexturePack.zip": "{install_path}"
-      }
-    },
-    {
-      "name": "材质包",
-      "required": false,
-      "checked": false,
-      "part_checked": false,
-      "disabled": true,
-      "id": "texture_packs",
-      "desc": "<b>材质包</b>: 可选材质包",
-      "after": null,
-      "dependencies": [
-        "bepinex_runtime",
-        "modding_api",
-        "texture_pack"
-      ],
-      "files": null,
-      "actions": null
-    }
-  ]
+    "items": [
+        {
+            "name": "BB+ 汉化包",
+            "required": true,
+            "checked": true,
+            "id": "main",
+            "version": "1.18.4",
+            "desc": "<b>BB+ 汉化包</b>: 主汉化程序，必选组件",
+            "default_path": "C:\\Program Files (x86)\\Steam\\steamapps\\common\\Baldi's Basics Plus",
+            "after": null,
+            "dependencies": [
+                "bepinex_runtime"
+            ],
+            "files": [
+                "pack/BBPC.zip",
+                "pack/readme.txt"
+            ],
+            "actions": {
+                "pack/BBPC.zip": "{install_path}",
+                "pack/readme.txt": "{install_path}"
+            }
+        },
+        {
+            "name": "BepInEx 运行环境",
+            "required": true,
+            "checked": true,
+            "id": "bepinex_runtime",
+            "version": "5.4.23.5",
+            "desc": "<b>BepInEx 运行环境</b>: 模组加载器和卸载器；卸载汉化核心时会保留",
+            "after": null,
+            "dependencies": [],
+            "files": null,
+            "winx86file": [
+                "pack/WINBepInEx86.zip",
+                "pack/uninstall-windows-x86.exe"
+            ],
+            "winx64file": [
+                "pack/WINBepInEx64.zip",
+                "pack/uninstall-windows-x86.exe"
+            ],
+            "linuxx86file": [
+                "pack/LINUXBepInEx86.zip"
+            ],
+            "linuxx64file": [
+                "pack/LINUXBepInEx64.zip",
+                "pack/uninstall-linux-x64.AppImage"
+            ],
+            "macfile": [
+                "pack/MACBepInEx.zip",
+                "pack/uninstall-macos.zip"
+            ],
+            "actions": {
+                "pack/WINBepInEx86.zip": "{install_path}",
+                "pack/WINBepInEx64.zip": "{install_path}",
+                "pack/LINUXBepInEx86.zip": "{install_path}",
+                "pack/LINUXBepInEx64.zip": "{install_path}",
+                "pack/MACBepInEx.zip": "{install_path}",
+                "pack/uninstall-windows-x86.exe": "{install_path}",
+                "pack/uninstall-linux-x64.AppImage": "{install_path}",
+                "pack/uninstall-macos.zip": "{install_path}"
+            }
+        },
+        {
+            "name": "其他模组",
+            "required": false,
+            "checked": true,
+            "part_checked": true,
+            "id": "other_mods",
+            "desc": "<b>其他模组</b>: 可选附加模组",
+            "after": null,
+            "dependencies": [
+                "bepinex_runtime"
+            ],
+            "files": null,
+            "actions": null
+        },
+        {
+            "name": "模组API (大多数模组的前置)",
+            "required": true,
+            "checked": true,
+            "id": "modding_api",
+            "version": "11.1.0.2",
+            "desc": "<b>模组API</b>: 所有模组运行的基础，安装后可以加载其他模组",
+            "after": "other_mods",
+            "dependencies": [
+                "bepinex_runtime"
+            ],
+            "files": [
+                "pack/BBDevAPI.zip"
+            ],
+            "actions": {
+                "pack/BBDevAPI.zip": "{install_path}"
+            }
+        },
+        {
+            "name": "PineDebug",
+            "required": false,
+            "checked": false,
+            "id": "pine_debug",
+            "version": "0.3.5",
+            "desc": "<b>PineDebug</b>: BB+ 的修改器而已, 这还有什么可以介绍的么?",
+            "after": "other_mods",
+            "dependencies": [
+                "bepinex_runtime",
+                "modding_api"
+            ],
+            "files": [
+                "pack/PineDebug.zip"
+            ],
+            "actions": {
+                "pack/PineDebug.zip": "{install_path}"
+            }
+        },
+        {
+            "name": "关卡加载API",
+            "required": false,
+            "checked": false,
+            "part_checked": false,
+            "id": "level_loading_api",
+            "version": "1.12.2.0",
+            "desc": "<b>关卡加载API</b>: 用于加载自定义关卡的API",
+            "after": "other_mods",
+            "dependencies": [
+                "bepinex_runtime",
+                "modding_api"
+            ],
+            "files": [
+                "pack/LevelLoader.zip"
+            ],
+            "actions": {
+                "pack/LevelLoader.zip": "{install_path}/BepInEx/plugins"
+            }
+        },
+        {
+            "name": "关卡编辑器",
+            "required": false,
+            "checked": false,
+            "part_checked": false,
+            "id": "level_editor",
+            "version": "1.8.3.2",
+            "desc": "<b>关卡编辑器</b>: 用于自定义关卡的模组",
+            "after": "other_mods",
+            "dependencies": [
+                "bepinex_runtime",
+                "modding_api",
+                "level_loading_api"
+            ],
+            "files": [
+                "pack/LevelEditor.zip"
+            ],
+            "actions": {
+                "pack/LevelEditor.zip": "{install_path}"
+            }
+        },
+        {
+            "name": "Pixel的内部API",
+            "required": false,
+            "checked": false,
+            "part_checked": false,
+            "id": "pixel_internal_api",
+            "version": "1.2.7.1",
+            "desc": "<b>Pixel的内部API</b>: PixelGuy用来开发模组而编写的API",
+            "after": "other_mods",
+            "dependencies": [
+                "bepinex_runtime",
+                "modding_api"
+            ],
+            "files": [
+                "pack/PIAPI.zip"
+            ],
+            "actions": {
+                "pack/PIAPI.zip": "{install_path}/BepInEx/plugins"
+            }
+        },
+        {
+            "name": "模组管理器",
+            "required": false,
+            "checked": false,
+            "part_checked": false,
+            "id": "mod_manager",
+            "version": "2.1.1",
+            "desc": "<b>模组管理器</b>: 每次禁用模组都要从文件夹里删除文件，是不是很麻烦？现在你可以下载这个模组，直接在游戏里禁用模组，无需删除任何文件！它还能显示模组信息，并且允许你在不重启游戏的情况下下载模组。",
+            "after": "other_mods",
+            "dependencies": [
+                "bepinex_runtime",
+                "modding_api"
+            ],
+            "files": [
+                "pack/ModManager.zip"
+            ],
+            "actions": {
+                "pack/ModManager.zip": "{install_path}/BepInEx/plugins"
+            }
+        },
+        {
+            "name": "Carnival Pack",
+            "required": false,
+            "checked": false,
+            "part_checked": false,
+            "id": "carnival_pack",
+            "version": "3.1.0.1",
+            "desc": "<b>Carnival Pack</b>: 哇！狂欢节来到了这里，现在又多了一个新角色（Zorpster）和一件新物品！（棉花糖",
+            "after": "other_mods",
+            "dependencies": [
+                "bepinex_runtime",
+                "modding_api"
+            ],
+            "files": [
+                "pack/CarnivalPack.zip"
+            ],
+            "actions": {
+                "pack/CarnivalPack.zip": "{install_path}"
+            }
+        },
+        {
+            "name": "Modifiers Disaster! Plus",
+            "required": false,
+            "checked": false,
+            "part_checked": false,
+            "id": "modifiers_disaster_plus",
+            "version": "1.0",
+            "desc": "<b>Modifiers Disaster! Plus</b>: 这个模组添加了一些修改器，会以各种疯狂的方式改变游戏！有点像BBCR，但又不太一样……",
+            "after": "other_mods",
+            "dependencies": [
+                "bepinex_runtime",
+                "modding_api",
+                "pixel_internal_api"
+            ],
+            "files": [
+                "pack/Modifiers.zip"
+            ],
+            "actions": {
+                "pack/Modifiers.zip": "{install_path}"
+            }
+        },
+        {
+            "name": "Micro Events!",
+            "required": false,
+            "checked": false,
+            "part_checked": false,
+            "id": "micro_events",
+            "version": "2.1",
+            "desc": "<b>Micro Events!</b>: 这个模组引入了微事件的概念！微事件是一个独立的系统，其中可能发生好事或坏事，目前已有超过100个微事件和10多种独特的贴纸，可以以各种意想不到的方式改变微事件的运作方式！希望您能玩得开心！因为制作这个模组花费了我大量的心血。",
+            "after": "other_mods",
+            "dependencies": [
+                "bepinex_runtime",
+                "modding_api",
+                "pixel_internal_api"
+            ],
+            "files": [
+                "pack/MicroEvents.zip"
+            ],
+            "actions": {
+                "pack/MicroEvents.zip": "{install_path}"
+            }
+        },
+        {
+            "name": "可修改的游戏模式API",
+            "required": false,
+            "checked": false,
+            "part_checked": false,
+            "id": "modded_modes_api",
+            "version": "1.2.0",
+            "desc": "<b>可修改的游戏模式API</b>: 你的模组需要为游戏添加自定义界面或模式吗？这个 API 会让你的工作更轻松！",
+            "after": "other_mods",
+            "dependencies": [
+                "bepinex_runtime"
+            ],
+            "files": [
+                "pack/MMAPI.zip"
+            ],
+            "actions": {
+                "pack/MMAPI.zip": "{install_path}/BepInEx/plugins"
+            }
+        },
+        {
+            "name": "Null Style",
+            "required": false,
+            "checked": false,
+            "part_checked": false,
+            "id": "null_style",
+            "version": "1.3.0",
+            "desc": "<b>Null Style</b>: 感受与 Null 随机生成的激烈战斗！Null 模式现已加入 BB+！",
+            "after": "other_mods",
+            "dependencies": [
+                "bepinex_runtime",
+                "modding_api",
+                "pixel_internal_api",
+                "modded_modes_api"
+            ],
+            "files": [
+                "pack/NULLStyle.zip"
+            ],
+            "actions": {
+                "pack/NULLStyle.zip": "{install_path}"
+            }
+        },
+        {
+            "name": "材质包模组",
+            "required": false,
+            "checked": false,
+            "part_checked": false,
+            "id": "texture_pack",
+            "version": "3.3.0.1",
+            "desc": "<b>材质包模组</b>: 向 BB+ 添加材质包系统！",
+            "after": "other_mods",
+            "dependencies": [
+                "bepinex_runtime",
+                "modding_api"
+            ],
+            "files": [
+                "pack/TexturePack.zip"
+            ],
+            "actions": {
+                "pack/TexturePack.zip": "{install_path}"
+            }
+        },
+        {
+            "name": "材质包",
+            "required": false,
+            "checked": false,
+            "part_checked": false,
+            "disabled": true,
+            "id": "texture_packs",
+            "desc": "<b>材质包</b>: 可选材质包",
+            "after": null,
+            "dependencies": [
+                "bepinex_runtime",
+                "modding_api",
+                "texture_pack"
+            ],
+            "files": null,
+            "actions": null
+        }
+    ]
 }
