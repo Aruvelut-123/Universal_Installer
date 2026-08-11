@@ -1,15 +1,16 @@
 .venv
 .stfolder
 .idea
-# Track component configuration while keeping installer payloads private.
+# Keep installer payloads and production configuration private; track examples.
 pack/*
 !pack/items_example.json
-!pack/items.json
 MOD
 *.zip
 test.py
 build main.bat
 build.py
+/metadata.json
+.build-tools/
 *.exe
 *.AppImage
 *.app

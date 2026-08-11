@@ -55,13 +55,13 @@ Windows 安装器虽然是 x86 程序，但会检测操作系统的原生架构�
 | --- | --- |
 | `main.py` | 安装器界面、组件选择、路径检测与文件解压逻辑 |
 | `uninstaller.py` | 安装事务记录、原文件备份、控制面板注册与安全卸载逻辑 |
-| `metadata.json` | 当前 BB+ 安装器的名称、版本、权限、图片和注册表配置 |
-| `pack/items.json` | 当前 BB+ 组件、版本、依赖、平台文件和目标路径配置 |
+| `metadata.json` | 本地 BB+ 安装器配置（不提交） |
+| `pack/items.json` | 本地 BB+ 组件、版本、依赖、平台文件和目标路径配置（不提交） |
 | `metadata_example.json` | 可复用的通用全局配置示例 |
 | `pack/items_example.json` | 可复用的通用组件配置示例 |
 | `requirements.txt` | 运行依赖与可选构建依赖 |
 
-复用本项目时，可将两个示例文件复制为 `metadata.json` 和 `pack/items.json`，再替换示例值。当前仓库同时跟踪 BB+ 的生产配置。
+首次使用或复用本项目时，将两个示例文件复制为 `metadata.json` 和 `pack/items.json`，再替换示例值。这两个生产配置和 `build.py` 仅保存在本地，不会提交到 Git。
 
 `pack/items.json` 顶层使用 `components`。每个组件必须具有唯一的 `component_id`；`dependencies` 中的每个值都必须引用已存在的组件 ID。含文件的组件必须提供非空 `version`，只用于分组且没有文件的组件可省略版本。`common_files` 和平台文件列表里的每个文件也必须在 `destinations` 中配置目标路径。
 
@@ -94,7 +94,7 @@ GitHub Actions 使用固定架构和版本生成以下产物：
 - Linux：Python 3.8.18、PySide6 6.5.3 和 Nuitka，生成二进制文件与 AppImage
 - macOS：`macos-26-intel`、Python 3.8.18、PySide6 6.5.3 和 Nuitka，生成最低部署目标为 macOS 11 的 x86_64 应用
 
-同一批构建还会生成 `uninstall-windows-x86.exe`、`uninstall-linux-x64.bin`、`uninstall-linux-x64.AppImage` 和 `uninstall-macos.zip`。Linux 配置默认使用 AppImage，裸二进制保留给需要自行集成的场景。组装安装包时，应将默认产物放到 `pack/items.json` 的 `uninstaller.*.file` 指定位置。
+同一批构建还会生成 `uninstall-windows-x86.exe`、`uninstall-linux-x64.bin`、`uninstall-linux-x64.AppImage` 和 `uninstall-macos.zip`。Linux 配置默认使用 AppImage，裸二进制保留给需要自行集成的场景。组装安装包时，应将默认产物放到 `pack/items.json` 的 `uninstaller.*.source_file` 指定位置。
 
 pip 下载缓存按操作系统、Python 版本、解释器架构和 `requirements.txt` 内容隔离，x86 与 x64 构建不会共用错误的缓存。
 
