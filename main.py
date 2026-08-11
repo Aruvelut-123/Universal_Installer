@@ -547,6 +547,34 @@ def get_core_component():
     items = get_metadata()["items"]
     return next((item for item in items if item["is_core"]), items[MAIN_ITEM])
 
+
+def get_uninstaller_ui_configuration():
+    """Describe branded files that the installed uninstaller needs."""
+    asset_fields = {
+        "license": "license_file",
+        "sidebar": "left_pic",
+        "header": "header_pic",
+        "icon": "icon",
+    }
+    assets = {}
+    for role, metadata_key in asset_fields.items():
+        configured_path = INSTALLER_METADATA.get(metadata_key)
+        if not isinstance(configured_path, str) or not configured_path.strip():
+            continue
+        source = Path(configured_path.replace("\\", "/"))
+        if not source.is_absolute():
+            source = APPLICATION_DIR / source
+        if source.is_file():
+            assets[role] = str(source.resolve())
+    return {
+        "product_name": INSTALLER_METADATA["short_name"],
+        "program_name": PROGRAM_NAME,
+        "version": VERSION,
+        "publisher": INSTALLER_METADATA["author"],
+        "footer_text": INSTALLER_METADATA["footer_info"],
+        "assets": assets,
+    }
+
 THEME_COLORS = {
     "light": {
         "window": "#F5F5F5",
@@ -1373,6 +1401,10 @@ class InstallThread(QThread):
                     self.recorder.estimated_size(),
                 )
                 self.recorder.set_registry(registered_uninstaller)
+
+            self.recorder.store_uninstaller_ui(
+                get_uninstaller_ui_configuration()
+            )
 
             self.recorder.finalize()
 

@@ -205,6 +205,7 @@ class InstallRecorder:
         self.transaction_directories = []
         self.new_backups = []
         self.registry = self.previous_manifest.get("windows_registry")
+        self.uninstaller_ui = self.previous_manifest.get("uninstaller_ui")
         self.current_component = None
         self.touched_files = {}
         self.skipped_files = 0
@@ -410,6 +411,30 @@ class InstallRecorder:
     def set_registry(self, registry):
         self.registry = dict(registry) if registry else None
 
+    def store_uninstaller_ui(self, configuration):
+        """Copy standalone uninstaller UI assets into the private data folder."""
+        configuration = dict(configuration or {})
+        assets = configuration.pop("assets", {})
+        stored_assets = {}
+        ui_directory = self.data_directory / "ui"
+        for role, source_value in assets.items():
+            if role not in {"license", "sidebar", "header", "icon"}:
+                continue
+            source = Path(source_value).resolve()
+            if not source.is_file():
+                continue
+            suffix = source.suffix.lower()
+            if not suffix or not suffix[1:].isalnum():
+                suffix = ".dat"
+            target = ui_directory / (role + suffix)
+            _copy_file(source, target)
+            stored_assets[role] = target.relative_to(
+                self.data_directory
+            ).as_posix()
+        configuration["assets"] = stored_assets
+        self.uninstaller_ui = configuration
+        return configuration
+
     def estimated_size(self):
         total = 0
         for relative in self.files:
@@ -438,6 +463,7 @@ class InstallRecorder:
                 key=lambda value: (len(Path(value).parts), value),
             ),
             "windows_registry": self.registry,
+            "uninstaller_ui": self.uninstaller_ui,
         }
         _atomic_write_manifest(self.manifest_path, manifest)
         self._discard_transaction()

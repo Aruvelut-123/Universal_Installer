@@ -67,7 +67,7 @@ Windows 安装器虽然是 x86 程序，但会检测操作系统的原生架构�
 
 顶层 `uninstaller` 对象分别配置 Windows、Linux 和 macOS 的卸载器包。其中 `source_file` 是随组件分发的源文件，`installed_executable` 是安装完成后的可执行文件相对路径。卸载器必须放入必选组件对应的平台文件列表，并在 `destinations` 中安装到 `{install_path}`。生产配置让 `main` 核心拥有卸载器，因此移除核心时也会移除卸载器和 Windows 注册表项；BepInEx 由独立组件拥有并会保留。
 
-`metadata.json` 中的 `product_registry_key` 与 `uninstall_registry_key` 是可复用安装器时必须自行设置的完整注册表路径，均位于 `Software\...` 下。`core_component_index` 指定核心组件：移除它会删除 Windows 产品与卸载注册项，即使其他独立组件仍然保留。安装完成后，组件版本、依赖、文件 SHA-256、文件归属和原文件备份索引保存在 `{install_path}/.universal_installer/install_info.uim`；它是带版本标识并使用 zlib 压缩的专用二进制格式，不是明文 JSON。
+`metadata.json` 中的 `product_registry_key` 与 `uninstall_registry_key` 是可复用安装器时必须自行设置的完整注册表路径，均位于 `Software\...` 下。组件可使用 `is_core_component` 明确标记核心（省略时默认为 `false`，旧配置继续回退到 `core_component_index`）；移除核心会删除卸载器、`.universal_installer` 和 Windows 注册项，即使其他独立组件仍然保留。安装完成后，组件版本、依赖、文件 SHA-256、文件归属和原文件备份索引保存在 `{install_path}/.universal_installer/install_info.uim`；许可证、图标和可用的页眉/侧栏图片也会复制到同目录的 `ui` 文件夹，供独立卸载器使用。安装信息是带版本标识并使用 zlib 压缩的专用二进制格式，不是明文 JSON。
 
 组件可使用 `remove_directories_on_uninstall` 指定卸载该组件时需递归清理的生成目录，例如 `"{install_path}/plugins/application-core"`。路径必须严格位于安装目录内，不能指向安装根目录、安装信息目录或通过链接逃逸；目录内未由安装器记录的文件也会删除，因此只应配置该组件独占的目录。
 

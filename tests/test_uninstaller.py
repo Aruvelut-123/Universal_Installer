@@ -209,6 +209,36 @@ class ManifestRecordingTests(unittest.TestCase):
             self.assertEqual(versions["runtime"], "5.4.23.5")
             self.assertEqual(manifest["files"][0]["components"], ["core"])
 
+    def test_recorder_stores_standalone_uninstaller_ui_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "game"
+            root.mkdir()
+            assets = Path(directory) / "assets"
+            assets.mkdir()
+            license_path = assets / "LICENSE.txt"
+            icon_path = assets / "brand.png"
+            license_path.write_text("Example license", encoding="utf-8")
+            icon_path.write_bytes(b"png")
+            recorder = uninstaller.InstallRecorder(
+                root,
+                {"program_name": "Test", "version": "1", "author": "A"},
+                [{"id": "core", "name": "Core", "version": "1"}],
+                {},
+                core_component="core",
+            )
+
+            stored = recorder.store_uninstaller_ui({
+                "product_name": "Test",
+                "footer_text": "Test setup",
+                "assets": {"license": license_path, "icon": icon_path},
+            })
+            recorder.finalize()
+
+            _, manifest = uninstaller.load_manifest(recorder.manifest_path)
+            self.assertEqual(manifest["uninstaller_ui"], stored)
+            for relative in stored["assets"].values():
+                self.assertTrue((recorder.data_directory / relative).is_file())
+
     def test_update_skips_identical_files_and_removes_stale_files(self):
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)
