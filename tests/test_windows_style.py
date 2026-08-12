@@ -1,7 +1,7 @@
 import unittest
 from unittest import mock
 
-from windows_style import configure_windows_qt_style, windows_style_profile
+from platform_utils import configure_windows_qt_style, windows_style_profile
 
 
 class WindowsStyleTests(unittest.TestCase):

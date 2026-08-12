@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 import uninstaller
-from responsive_ui import responsive_ui_metrics
+from platform_utils import responsive_ui_metrics
 
 
 class ComponentUninstallTests(unittest.TestCase):

@@ -14,17 +14,15 @@ import zlib
 from datetime import datetime
 from pathlib import Path
 
-from responsive_ui import (
+from platform_utils import (
     add_wizard_button,
+    apply_windows_window_effects,
     configure_high_dpi,
     configure_responsive_window,
+    configure_windows_qt_style,
     responsive_image_label_class,
     responsive_ui_metrics,
-)
-from runtime_paths import resolve_application_directory
-from windows_style import (
-    apply_windows_window_effects,
-    configure_windows_qt_style,
+    resolve_application_directory,
     windows_app_theme,
     windows_style_profile,
 )

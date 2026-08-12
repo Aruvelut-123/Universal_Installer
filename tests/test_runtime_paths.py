@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from runtime_paths import resolve_application_directory
+from platform_utils import resolve_application_directory
 
 
 class RuntimePathTests(unittest.TestCase):

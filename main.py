@@ -24,20 +24,16 @@ from pathlib import Path
 import traceback
 from typing import Any
 
-from responsive_ui import (
+from platform_utils import (
     add_wizard_button,
+    apply_windows_window_effects,
     configure_high_dpi,
     configure_responsive_window,
+    configure_windows_qt_style,
+    is_frozen_application as shared_is_frozen_application,
     responsive_image_label_class,
     responsive_ui_metrics,
-)
-from runtime_paths import (
-    is_frozen_application as shared_is_frozen_application,
     resolve_application_directory as shared_resolve_application_directory,
-)
-from windows_style import (
-    apply_windows_window_effects,
-    configure_windows_qt_style,
     windows_style_profile,
 )
 

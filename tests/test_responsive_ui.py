@@ -1,6 +1,6 @@
 import unittest
 
-from responsive_ui import (
+from platform_utils import (
     add_wizard_button,
     configure_high_dpi,
     configure_responsive_window,
