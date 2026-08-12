@@ -7,6 +7,25 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BuildConfigurationTests(unittest.TestCase):
+    def test_packaging_build_uses_an_input_allowlist(self):
+        workflow = (ROOT / ".github/workflows/build-app.yml").read_text(
+            encoding="utf-8"
+        )
+        trigger_section = workflow.split("concurrency:", 1)[0]
+
+        self.assertEqual(trigger_section.count("    paths:\n"), 2)
+        self.assertNotIn("paths-ignore:", trigger_section)
+        for build_input in (
+            "'*.py'",
+            "'requirements*.txt'",
+            "'pack/icon.ico'",
+            "'scripts/**'",
+            "'.github/actions/setup-python-cache/**'",
+            "'.github/workflows/build-app.yml'",
+            "'.github/workflows/build-release.yml'",
+        ):
+            self.assertIn(build_input, trigger_section)
+
     def test_dependabot_only_updates_github_actions(self):
         dependabot = (ROOT / ".github/dependabot.yml").read_text(
             encoding="utf-8"

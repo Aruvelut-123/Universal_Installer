@@ -3,20 +3,24 @@ name: Build for PR and pushes
 on:
   push:
     branches: [ "master" ]
-    paths-ignore:
-      - '.gitignore'
-      - '**.md'
-      - 'metadata.json'
-      - 'LICENSE'
-      - 'pack/**'
+    paths:
+      - '*.py'
+      - 'requirements*.txt'
+      - 'pack/icon.ico'
+      - 'scripts/**'
+      - '.github/actions/setup-python-cache/**'
+      - '.github/workflows/build-app.yml'
+      - '.github/workflows/build-release.yml'
   pull_request:
     branches: [ "master" ]
-    paths-ignore:
-      - '.gitignore'
-      - '**.md'
-      - 'metadata.json'
-      - 'LICENSE'
-      - 'pack/**'
+    paths:
+      - '*.py'
+      - 'requirements*.txt'
+      - 'pack/icon.ico'
+      - 'scripts/**'
+      - '.github/actions/setup-python-cache/**'
+      - '.github/workflows/build-app.yml'
+      - '.github/workflows/build-release.yml'
   workflow_dispatch:
 
 concurrency:
