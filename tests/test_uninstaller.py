@@ -118,6 +118,19 @@ class ComponentUninstallTests(unittest.TestCase):
             {"core"},
         )
 
+    def test_uninstall_selection_status_summarizes_core_removal(self):
+        temporary, _, _, manifest = self.make_installation()
+        self.addCleanup(temporary.cleanup)
+
+        status = uninstaller.uninstall_selection_status(
+            manifest, {"core", "mod"}
+        )
+
+        self.assertEqual(status["selected_count"], 2)
+        self.assertEqual(status["total_count"], 4)
+        self.assertEqual(status["selected_names"], ["BBPC", "Mod"])
+        self.assertTrue(status["core_selected"])
+
     def test_core_uninstall_keeps_runtime_mods_and_removes_registry(self):
         temporary, root, manifest_path, manifest = self.make_installation()
         self.addCleanup(temporary.cleanup)

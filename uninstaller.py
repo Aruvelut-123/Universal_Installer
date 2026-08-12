@@ -152,6 +152,25 @@ def dependent_removal_closure(manifest, selected_components):
     return selected
 
 
+def uninstall_selection_status(manifest, selected_components):
+    """Describe a component-removal selection for UI summaries."""
+    components = _manifest_components(manifest)
+    selected = set(selected_components)
+    core_component = manifest.get("core_component")
+    if not isinstance(core_component, str):
+        core_component = components[0]["id"] if components else None
+    selected_names = [
+        component["name"] for component in components
+        if component["id"] in selected
+    ]
+    return {
+        "selected_count": len(selected_names),
+        "total_count": len(components),
+        "selected_names": selected_names,
+        "core_selected": core_component in selected,
+    }
+
+
 class InstallRecorder:
     """Record an installation transaction and retain originals for uninstall."""
 
@@ -1023,7 +1042,7 @@ def create_uninstaller_window(manifest_path, manifest):
             if available.width() <= 0 or available.height() <= 0:
                 return
             self.setPixmap(self.source_pixmap.scaled(
-                available, Qt.KeepAspectRatio, Qt.SmoothTransformation
+                available, Qt.KeepAspectRatio, Qt.FastTransformation
             ))
 
     class UninstallWorker(QThread):
@@ -1232,6 +1251,8 @@ def create_uninstaller_window(manifest_path, manifest):
             )
             self.component_tree = QTreeWidget()
             self.component_tree.setHeaderLabels(("组件", "已安装版本", "依赖"))
+            self.component_tree.setAlternatingRowColors(True)
+            self.component_tree.setRootIsDecorated(False)
             header = self.component_tree.header()
             header.setSectionResizeMode(0, QHeaderView.Stretch)
             header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
@@ -1253,12 +1274,32 @@ def create_uninstaller_window(manifest_path, manifest):
                 item.setCheckState(0, Qt.Unchecked)
                 self.items_by_id[component["id"]] = item
             self.component_tree.itemChanged.connect(self.on_component_changed)
+            selection_tools = QHBoxLayout()
+            selection_tools.setSpacing(8)
+            self.selection_summary = QLabel()
+            self.selection_summary.setWordWrap(True)
+            selection_tools.addWidget(self.selection_summary, 1)
+            select_all = QPushButton("全部选择")
+            select_all.clicked.connect(self.select_all_components)
+            selection_tools.addWidget(select_all)
+            clear_all = QPushButton("清除选择")
+            clear_all.clicked.connect(self.clear_component_selection)
+            selection_tools.addWidget(clear_all)
+            content.addLayout(selection_tools)
             content.addWidget(self.component_tree)
+            self.core_removal_warning = QLabel(
+                "⚠ 移除核心组件也会删除卸载器、Windows "
+                "注册项和全部安装记录。"
+            )
+            self.core_removal_warning.setWordWrap(True)
+            self.core_removal_warning.setVisible(False)
+            content.addWidget(self.core_removal_warning)
             self.add_button(
                 buttons, "< 上一步(P)", lambda: self.go_to_page("license")
             )
             self.add_button(buttons, "卸载(U)", self.confirm_uninstall, True)
             self.add_button(buttons, "取消(C)", self.cancel_uninstall)
+            self.update_component_summary()
             return page
 
         def build_progress_page(self):
@@ -1296,6 +1337,39 @@ def create_uninstaller_window(manifest_path, manifest):
                 if item.checkState(0) == Qt.Checked
             }
 
+        def set_component_selection(self, selected):
+            with_selection = set(selected)
+            self.component_tree.blockSignals(True)
+            try:
+                for component_id, item in self.items_by_id.items():
+                    item.setCheckState(
+                        0, Qt.Checked
+                        if component_id in with_selection else Qt.Unchecked
+                    )
+            finally:
+                self.component_tree.blockSignals(False)
+            self.update_component_summary()
+
+        def select_all_components(self):
+            self.set_component_selection(components_by_id)
+
+        def clear_component_selection(self):
+            self.set_component_selection(set())
+
+        def update_component_summary(self):
+            status = uninstall_selection_status(
+                manifest, self.selected_component_ids()
+            )
+            if status["selected_names"]:
+                names = "、".join(status["selected_names"])
+                summary = "已选择 {}/{} 个组件：{}".format(
+                    status["selected_count"], status["total_count"], names
+                )
+            else:
+                summary = "未选择任何组件。"
+            self.selection_summary.setText(summary)
+            self.core_removal_warning.setVisible(status["core_selected"])
+
         def on_component_changed(self, item, _column):
             if self.component_tree.signalsBlocked():
                 return
@@ -1317,10 +1391,12 @@ def create_uninstaller_window(manifest_path, manifest):
                             ", ".join(affected)
                         ),
                     )
+                self.update_component_summary()
                 return
             expanded = dependent_removal_closure(manifest, selected_now)
             added = expanded - selected_now
             if not added:
+                self.update_component_summary()
                 return
             names = ", ".join(
                 self.items_by_id[value].text(0) for value in sorted(added)
@@ -1340,6 +1416,7 @@ def create_uninstaller_window(manifest_path, manifest):
                     item.setCheckState(0, Qt.Unchecked)
             finally:
                 self.component_tree.blockSignals(False)
+            self.update_component_summary()
 
         def confirm_uninstall(self):
             selected = self.selected_component_ids()

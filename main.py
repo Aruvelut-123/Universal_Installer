@@ -1339,7 +1339,7 @@ class ResponsiveImageLabel(QLabel):
         if available.width() <= 0 or available.height() <= 0:
             return
         self.setPixmap(self.source_pixmap.scaled(
-            available, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            available, Qt.KeepAspectRatio, Qt.FastTransformation
         ))
 
 
