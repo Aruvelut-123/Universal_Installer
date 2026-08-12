@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import ctypes
+import base64
 import errno
 import hashlib
 import json
@@ -911,12 +911,28 @@ def remove_running_uninstaller(path):
     if path is None:
         return
     if platform.system().lower() == "windows":
-        movefile_delay_until_reboot = 0x4
-        result = ctypes.windll.kernel32.MoveFileExW(
-            str(path), None, movefile_delay_until_reboot
+        target = str(Path(path).resolve()).replace("'", "''")
+        target_literal = "'{}'".format(target)
+        cleanup_script = (
+            "$ErrorActionPreference = 'SilentlyContinue'; "
+            "Wait-Process -Id {pid}; "
+            "for ($attempt = 0; $attempt -lt 40; $attempt++) {{ "
+            "Remove-Item -LiteralPath {target} -Force; "
+            "if (-not (Test-Path -LiteralPath {target})) {{ exit 0 }}; "
+            "Start-Sleep -Milliseconds 250 "
+            "}}; exit 1"
+        ).format(pid=os.getpid(), target=target_literal)
+        encoded_script = base64.b64encode(
+            cleanup_script.encode("utf-16le")
+        ).decode("ascii")
+        subprocess.Popen(
+            [
+                "powershell.exe", "-NoProfile", "-NonInteractive",
+                "-WindowStyle", "Hidden", "-EncodedCommand", encoded_script,
+            ],
+            close_fds=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-        if not result:
-            raise ctypes.WinError()
     elif path.is_dir():
         shutil.rmtree(str(path))
     else:

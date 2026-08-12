@@ -1,3 +1,4 @@
+import base64
 import tempfile
 import unittest
 from pathlib import Path
@@ -128,6 +129,42 @@ class ComponentUninstallTests(unittest.TestCase):
         remove.assert_called_once_with(manifest["windows_registry"])
         self.assertFalse(manifest_path.exists())
         self.assertFalse((root / uninstaller.INSTALL_DATA_DIRECTORY).exists())
+
+    def test_windows_uninstaller_is_deleted_after_process_exits(self):
+        target = Path("/Program Files/Test's App/uninstall.exe")
+        with mock.patch.object(
+            uninstaller.platform, "system", return_value="Windows"
+        ), mock.patch.object(
+            uninstaller.os, "getpid", return_value=4321
+        ), mock.patch.object(uninstaller.subprocess, "Popen") as popen:
+            uninstaller.remove_running_uninstaller(target)
+
+        command = popen.call_args.args[0]
+        self.assertEqual(command[:5], [
+            "powershell.exe", "-NoProfile", "-NonInteractive",
+            "-WindowStyle", "Hidden",
+        ])
+        self.assertEqual(command[5], "-EncodedCommand")
+        script = base64.b64decode(command[6]).decode("utf-16le")
+        self.assertIn("Wait-Process -Id 4321", script)
+        self.assertIn(
+            "Remove-Item -LiteralPath '/Program Files/Test''s App/uninstall.exe'",
+            script.replace("\\", "/"),
+        )
+        self.assertTrue(popen.call_args.kwargs["close_fds"])
+
+    def test_linux_and_macos_uninstallers_are_deleted_immediately(self):
+        for system in ("Linux", "Darwin"):
+            with self.subTest(system=system), tempfile.TemporaryDirectory() as directory:
+                target = Path(directory) / "uninstall.bin"
+                target.write_bytes(b"uninstaller")
+                with mock.patch.object(
+                    uninstaller.platform, "system", return_value=system
+                ), mock.patch.object(uninstaller.subprocess, "Popen") as popen:
+                    uninstaller.remove_running_uninstaller(target)
+
+                self.assertFalse(target.exists())
+                popen.assert_not_called()
 
     def test_partial_uninstall_keeps_registry_when_core_remains(self):
         temporary, root, manifest_path, manifest = self.make_installation()
