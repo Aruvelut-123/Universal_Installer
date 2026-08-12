@@ -1686,8 +1686,14 @@ class ComponentsPage(BasePage):
         self.components_list.itemClicked.connect(self.on_item_clicked)
         self.components_list.itemChanged.connect(self.on_item_changed)
 
-        # 空间信息
+        # 空间信息统一放在组件页，方便对照当前选择。
+        space_layout = QHBoxLayout()
         self.space_label = QLabel("所需空间: 0 MB")
+        self.available_space_label = QLabel("可用空间: 未知")
+        self.available_space_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        space_layout.addWidget(self.space_label)
+        space_layout.addStretch(1)
+        space_layout.addWidget(self.available_space_label)
 
         selection_tools = QHBoxLayout()
         selection_tools.setSpacing(8)
@@ -1704,7 +1710,7 @@ class ComponentsPage(BasePage):
         left_layout.addWidget(tip_label)
         left_layout.addLayout(selection_tools)
         left_layout.addWidget(self.components_list)
-        left_layout.addWidget(self.space_label)
+        left_layout.addLayout(space_layout)
 
         # 右侧 - 组件描述
         right_widget = QWidget()
@@ -1736,6 +1742,7 @@ class ComponentsPage(BasePage):
     def on_select_change_size_method(self, size:int):
         self.need_space = size
         self.space_label.setText(f"所需空间：{format_size(size)}")
+        self.update_install_availability()
 
     def iter_tree_items(self):
         stack = [
@@ -1773,11 +1780,38 @@ class ComponentsPage(BasePage):
         })
 
     def on_page_shown(self, name):
-        if name != "components" or self.size_calculation_enabled:
+        if name != "components":
+            return
+        self.update_available_space()
+        if self.size_calculation_enabled:
             return
         self.size_calculation_enabled = True
         self.space_label.setText("正在计算所需空间...")
         QTimer.singleShot(0, self.synchronize_selection)
+
+    def update_available_space(self):
+        available = getattr(self.parent, "available_space", None)
+        if available is None:
+            text = "可用空间: 未知"
+        else:
+            text = "可用空间: {}".format(format_size(available))
+        self.available_space_label.setText(text)
+        self.update_install_availability()
+
+    def update_install_availability(self):
+        if not hasattr(self, "next_button"):
+            return
+        available = getattr(self.parent, "available_space", None)
+        required = getattr(self, "need_space", 0)
+        enough_space = available is None or available >= required
+        self.next_button.setEnabled(
+            not self.has_missing_required_files and enough_space
+        )
+        if available is not None:
+            suffix = "" if enough_space else "（空间不足）"
+            self.available_space_label.setText(
+                "可用空间: {}{}".format(format_size(available), suffix)
+            )
 
     def update_selection_summary(self):
         selected = [
@@ -2090,19 +2124,7 @@ class DirectoryPage(BasePage):
 
         path_form.addWidget(browse_btn)
 
-        # 空间信息
-        self.space_layout = QHBoxLayout()
-        self.space_layout.addStretch(1)
-
-        self.required_label = QLabel("所需空间: 0 KB")
-
-        self.available_label = QLabel()
-
-        self.space_layout.addWidget(self.required_label)
-        self.space_layout.addWidget(self.available_label)
-
         path_layout.addLayout(path_form)
-        path_layout.addLayout(self.space_layout)
 
         self.content_layout.addWidget(path_group)
 
@@ -2266,9 +2288,6 @@ class DirectoryPage(BasePage):
 
     def page_shown(self, name:str):
         if name == "directory":
-            self.required_label.setText(
-                f"所需空间：{format_size(self.parent.need_space)}"
-            )
             if not self.initial_detection_started:
                 self.initial_detection_started = True
                 QTimer.singleShot(0, self.update_directory)
@@ -2295,18 +2314,12 @@ class DirectoryPage(BasePage):
                         raise FileNotFoundError(path)
                     existing_path = parent_path
                 usage = shutil.disk_usage(existing_path)
-                self.available_label.setText(
-                    f"可用空间: {format_size(usage.free)}"
-                )
+                self.parent.available_space = usage.free
                 enough_space = usage.free >= self.parent.need_space
-                if not enough_space:
-                    self.available_label.setText(
-                        f"可用空间: {format_size(usage.free)}（空间不足）"
-                    )
                 if hasattr(self, "next_button"):
                     self.next_button.setEnabled(enough_space)
             except OSError:
-                self.available_label.setText("可用空间: 未知")
+                self.parent.available_space = None
 
     def has_sufficient_space(self, required_space):
         path = self.path_input.text().strip()
@@ -2555,6 +2568,7 @@ class InstallerWindow(QMainWindow):
         self.install_path = ""
         self.selected_components = {}
         self.need_space = 0
+        self.available_space = None
         self.install_success = False
 
         # 初始化页面
