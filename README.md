@@ -100,7 +100,7 @@ GitHub Actions 使用固定架构和版本生成以下产物：
 
 安装器和卸载器不强制使用 Fusion 或自定义 Qt 主题，而是保留当前平台提供的原生控件样式、字体和调色板。Windows 构建优先使用 Qt 的 `windowsvista` UxTheme 样式，因此 Windows 7 的 Aero、Windows 8/8.1 的 Metro、Windows 10 的 Fluent 外观和 Windows 11 的当前系统外观会由宿主系统决定；Windows 11 还会在支持时请求原生圆角和 Mica，失败时自动保留普通系统窗口。macOS 和 Linux 同样使用各自 Qt 平台插件提供的默认样式，显式设置的 `QT_STYLE_OVERRIDE` 会被保留。
 
-Linux 构建仅支持 Qt `xcb` 后端：X11 会话可直接运行，Wayland 桌面必须提供 XWayland 和 `DISPLAY`。原生 Wayland 后端不受支持。
+Linux 构建不设置 `QT_QPA_PLATFORM`，由 Qt 根据宿主会话和用户环境变量自动选择显示后端。
 
 pip 下载缓存按操作系统、Python 版本、解释器架构和 `requirements.txt` 内容隔离，x86 与 x64 构建不会共用错误的缓存。
 

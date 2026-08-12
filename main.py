@@ -24,7 +24,6 @@ from pathlib import Path
 import traceback
 from typing import Any
 
-from linux_display import configure_linux_qt_platform
 from responsive_ui import (
     add_wizard_button,
     configure_high_dpi,
@@ -41,8 +40,6 @@ from windows_style import (
     configure_windows_qt_style,
     windows_style_profile,
 )
-
-configure_linux_qt_platform()
 
 from uninstaller import (
     INSTALL_DATA_DIRECTORY,

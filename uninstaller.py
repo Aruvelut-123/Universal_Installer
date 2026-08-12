@@ -14,7 +14,6 @@ import zlib
 from datetime import datetime
 from pathlib import Path
 
-from linux_display import configure_linux_qt_platform
 from responsive_ui import (
     add_wizard_button,
     configure_high_dpi,
@@ -29,9 +28,6 @@ from windows_style import (
     windows_app_theme,
     windows_style_profile,
 )
-
-configure_linux_qt_platform()
-
 
 INSTALL_DATA_DIRECTORY = ".universal_installer"
 INSTALL_MANIFEST_NAME = "install_info.uim"
