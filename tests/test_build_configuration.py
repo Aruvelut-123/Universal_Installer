@@ -7,24 +7,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class BuildConfigurationTests(unittest.TestCase):
-    def test_dependabot_resolves_for_python_38(self):
-        python_version = (ROOT / ".python-version").read_text(
-            encoding="utf-8"
-        ).strip()
-        self.assertEqual(python_version.split(".")[:2], ["3", "8"])
-
-        for relative_path in (
-            ".github/workflows/build-app.yml",
-            ".github/workflows/build-release.yml",
-        ):
-            workflow = (ROOT / relative_path).read_text(encoding="utf-8")
-            self.assertIn('python-version: "3.8.10"', workflow)
-            self.assertIn('python-version: "3.8.18"', workflow)
-
+    def test_dependabot_only_updates_github_actions(self):
         dependabot = (ROOT / ".github/dependabot.yml").read_text(
             encoding="utf-8"
         )
-        self.assertIn("python-38-dependencies:", dependabot)
+        self.assertIn("package-ecosystem: github-actions", dependabot)
+        self.assertNotIn("package-ecosystem: pip", dependabot)
 
     def test_release_architecture_matrix_and_installer_names(self):
         for relative_path in (
