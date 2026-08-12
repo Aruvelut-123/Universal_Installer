@@ -8,6 +8,17 @@ import uninstaller
 
 
 class ComponentUninstallTests(unittest.TestCase):
+    def test_responsive_ui_metrics_scale_with_bounded_dimensions(self):
+        compact = uninstaller.responsive_ui_metrics(640, 480)
+        large = uninstaller.responsive_ui_metrics(1600, 1000)
+
+        self.assertLess(compact["header_height"], large["header_height"])
+        self.assertLess(compact["sidebar_width"], large["sidebar_width"])
+        self.assertEqual(compact["spacing"], 8)
+        self.assertEqual(large["spacing"], 12)
+        self.assertEqual(large["header_height"], 108)
+        self.assertEqual(large["sidebar_width"], 280)
+
     def test_installed_component_versions_supports_versionless_components(self):
         manifest = {
             "components": [

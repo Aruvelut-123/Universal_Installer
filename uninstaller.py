@@ -961,23 +961,39 @@ def resolve_uninstaller_ui_asset(manifest_path, manifest, role):
     return candidate
 
 
+def responsive_ui_metrics(width, height):
+    """Return bounded wizard dimensions derived from the current window size."""
+    width = max(1, int(width))
+    height = max(1, int(height))
+    compact = width < 720 or height < 520
+    return {
+        "horizontal_margin": max(14, min(32, width // 32)),
+        "vertical_margin": max(12, min(24, height // 32)),
+        "spacing": 8 if compact else 12,
+        "header_height": max(48, min(108, round(height * 0.14))),
+        "sidebar_width": max(128, min(280, round(width * 0.28))),
+    }
+
+
 def create_uninstaller_window(manifest_path, manifest):
     """Create the branded wizard window; the caller owns the QApplication."""
     try:
         from PySide6.QtCore import Qt, QThread, Signal, QTimer
         from PySide6.QtGui import QIcon, QPixmap
         from PySide6.QtWidgets import (
-            QApplication, QCheckBox, QFrame, QGroupBox, QHBoxLayout, QLabel,
-            QMainWindow, QMessageBox, QProgressBar, QPushButton, QStackedWidget,
-            QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+            QApplication, QCheckBox, QFrame, QGroupBox, QHeaderView,
+            QHBoxLayout, QLabel, QMainWindow, QMessageBox, QProgressBar,
+            QPushButton, QSizePolicy, QStackedWidget, QTextEdit, QTreeWidget,
+            QTreeWidgetItem, QVBoxLayout, QWidget,
         )
     except ImportError:
         from PySide2.QtCore import Qt, QThread, Signal, QTimer
         from PySide2.QtGui import QIcon, QPixmap
         from PySide2.QtWidgets import (
-            QApplication, QCheckBox, QFrame, QGroupBox, QHBoxLayout, QLabel,
-            QMainWindow, QMessageBox, QProgressBar, QPushButton, QStackedWidget,
-            QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget,
+            QApplication, QCheckBox, QFrame, QGroupBox, QHeaderView,
+            QHBoxLayout, QLabel, QMainWindow, QMessageBox, QProgressBar,
+            QPushButton, QSizePolicy, QStackedWidget, QTextEdit, QTreeWidget,
+            QTreeWidgetItem, QVBoxLayout, QWidget,
         )
     components = _manifest_components(manifest)
     components_by_id = {component["id"]: component for component in components}
@@ -988,6 +1004,27 @@ def create_uninstaller_window(manifest_path, manifest):
     product_name = ui_configuration.get("product_name", program_name)
     footer_text = ui_configuration.get("footer_text", "Universal Installer")
     core_component = manifest.get("core_component")
+
+    class ResponsiveImageLabel(QLabel):
+        """Render an image inside the available area without distorting it."""
+
+        def __init__(self, asset, vertical_policy):
+            super().__init__()
+            self.source_pixmap = QPixmap(str(asset))
+            self.setAlignment(Qt.AlignCenter)
+            self.setMinimumSize(1, 1)
+            self.setSizePolicy(QSizePolicy.Ignored, vertical_policy)
+
+        def resizeEvent(self, event):
+            super().resizeEvent(event)
+            if self.source_pixmap.isNull():
+                return
+            available = self.contentsRect().size()
+            if available.width() <= 0 or available.height() <= 0:
+                return
+            self.setPixmap(self.source_pixmap.scaled(
+                available, Qt.KeepAspectRatio, Qt.SmoothTransformation
+            ))
 
     class UninstallWorker(QThread):
         progress_updated = Signal(int, str)
@@ -1012,8 +1049,7 @@ def create_uninstaller_window(manifest_path, manifest):
         def __init__(self):
             super().__init__()
             self.setWindowTitle("卸载 {}".format(product_name))
-            self.setMinimumSize(640, 480)
-            self.resize(760, 560)
+            self.configure_window_size()
             icon = resolve_uninstaller_ui_asset(
                 manifest_path, manifest, "icon"
             )
@@ -1024,6 +1060,9 @@ def create_uninstaller_window(manifest_path, manifest):
             self.selected_components = set()
             self.worker = None
             self.success = False
+            self.page_layouts = []
+            self.header_images = []
+            self.sidebar_image = None
             self.stacked = QStackedWidget()
             self.setCentralWidget(self.stacked)
             self.pages = {
@@ -1039,6 +1078,21 @@ def create_uninstaller_window(manifest_path, manifest):
             self.go_to_page("welcome")
             QTimer.singleShot(0, self.apply_native_windows_effects)
 
+        def configure_window_size(self):
+            screen = QApplication.primaryScreen()
+            if screen is None:
+                self.setMinimumSize(640, 480)
+                self.resize(760, 560)
+                return
+            available = screen.availableGeometry()
+            minimum_width = min(640, max(480, available.width() - 40))
+            minimum_height = min(480, max(400, available.height() - 40))
+            self.setMinimumSize(minimum_width, minimum_height)
+            self.resize(
+                max(minimum_width, min(920, round(available.width() * 0.72))),
+                max(minimum_height, min(680, round(available.height() * 0.78))),
+            )
+
         def apply_style(self):
             self.windows_style_profile = windows_style_profile()
             self.windows_theme = windows_app_theme()
@@ -1051,17 +1105,16 @@ def create_uninstaller_window(manifest_path, manifest):
         def page_shell(self, title, subtitle, include_header=True):
             page = QWidget()
             layout = QVBoxLayout(page)
-            layout.setContentsMargins(20, 16, 20, 16)
-            layout.setSpacing(10)
+            self.page_layouts.append(layout)
             if include_header:
                 header_asset = resolve_uninstaller_ui_asset(
                     manifest_path, manifest, "header"
                 )
                 if header_asset is not None:
-                    header = QLabel()
-                    pixmap = QPixmap(str(header_asset))
-                    header.setPixmap(pixmap.scaledToHeight(72, Qt.SmoothTransformation))
-                    header.setAlignment(Qt.AlignCenter)
+                    header = ResponsiveImageLabel(
+                        header_asset, QSizePolicy.Fixed
+                    )
+                    self.header_images.append(header)
                     layout.addWidget(header)
             title_label = QLabel(title)
             title_font = title_label.font()
@@ -1077,7 +1130,12 @@ def create_uninstaller_window(manifest_path, manifest):
             content_layout = QVBoxLayout()
             layout.addLayout(content_layout, 1)
             button_layout = QHBoxLayout()
+            button_layout.setSpacing(8)
             button_layout.addStretch(1)
+            separator = QFrame()
+            separator.setFrameShape(QFrame.HLine)
+            separator.setFrameShadow(QFrame.Sunken)
+            layout.addWidget(separator)
             layout.addLayout(button_layout)
             footer = QLabel(footer_text)
             footer.setAlignment(Qt.AlignCenter)
@@ -1085,6 +1143,7 @@ def create_uninstaller_window(manifest_path, manifest):
             footer_font.setPointSize(max(8, footer_font.pointSize() - 1))
             footer.setFont(footer_font)
             layout.addWidget(footer)
+            self.update_responsive_layout()
             return page, content_layout, button_layout
 
         @staticmethod
@@ -1108,21 +1167,17 @@ def create_uninstaller_window(manifest_path, manifest):
                 manifest_path, manifest, "sidebar"
             )
             if sidebar_asset is not None:
-                sidebar = QLabel()
-                sidebar.setPixmap(
-                    QPixmap(str(sidebar_asset)).scaledToWidth(
-                        190, Qt.SmoothTransformation
-                    )
+                self.sidebar_image = ResponsiveImageLabel(
+                    sidebar_asset, QSizePolicy.Expanding
                 )
-                sidebar.setAlignment(Qt.AlignCenter)
-                body.addWidget(sidebar)
+                body.addWidget(self.sidebar_image, 2)
             message = QLabel(
                 "将保留未选择的组件和共享文件。\n\n"
                 "点击[下一步(N)]阅读许可证并继续。"
             )
             message.setWordWrap(True)
             message.setAlignment(Qt.AlignCenter)
-            body.addWidget(message, 1)
+            body.addWidget(message, 3)
             content.addLayout(body)
             self.add_button(buttons, "取消(C)", self.cancel_uninstall)
             self.add_button(
@@ -1177,6 +1232,10 @@ def create_uninstaller_window(manifest_path, manifest):
             )
             self.component_tree = QTreeWidget()
             self.component_tree.setHeaderLabels(("组件", "已安装版本", "依赖"))
+            header = self.component_tree.header()
+            header.setSectionResizeMode(0, QHeaderView.Stretch)
+            header.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+            header.setSectionResizeMode(2, QHeaderView.Stretch)
             for component in components:
                 item = QTreeWidgetItem(self.component_tree)
                 name = component["name"]
@@ -1193,7 +1252,6 @@ def create_uninstaller_window(manifest_path, manifest):
                 item.setData(0, Qt.UserRole, component["id"])
                 item.setCheckState(0, Qt.Unchecked)
                 self.items_by_id[component["id"]] = item
-            self.component_tree.resizeColumnToContents(0)
             self.component_tree.itemChanged.connect(self.on_component_changed)
             content.addWidget(self.component_tree)
             self.add_button(
@@ -1347,6 +1405,23 @@ def create_uninstaller_window(manifest_path, manifest):
 
         def go_to_page(self, name):
             self.stacked.setCurrentWidget(self.pages[name])
+
+        def update_responsive_layout(self):
+            metrics = responsive_ui_metrics(self.width(), self.height())
+            for layout in self.page_layouts:
+                layout.setContentsMargins(
+                    metrics["horizontal_margin"], metrics["vertical_margin"],
+                    metrics["horizontal_margin"], metrics["vertical_margin"],
+                )
+                layout.setSpacing(metrics["spacing"])
+            for header in self.header_images:
+                header.setFixedHeight(metrics["header_height"])
+            if self.sidebar_image is not None:
+                self.sidebar_image.setMaximumWidth(metrics["sidebar_width"])
+
+        def resizeEvent(self, event):
+            super().resizeEvent(event)
+            self.update_responsive_layout()
 
         def cancel_uninstall(self):
             reply = QMessageBox.question(
