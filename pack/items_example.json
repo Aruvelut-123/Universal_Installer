@@ -1,8 +1,8 @@
 {
     "uninstaller": {
         "windows": {
-            "source_file": "pack/uninstall-windows.exe",
-            "installed_executable": "uninstall-windows.exe"
+            "source_file": "pack/uninstall-windows.zip",
+            "installed_executable": "uninstall-windows/uninstall-windows.exe"
         },
         "linux": {
             "source_file": "pack/uninstall-linux.AppImage",
@@ -63,10 +63,10 @@
                 "pack/readme.txt"
             ],
             "windows_x86_files": [
-                "pack/uninstall-windows.exe"
+                "pack/uninstall-windows.zip"
             ],
             "windows_x64_files": [
-                "pack/uninstall-windows.exe"
+                "pack/uninstall-windows.zip"
             ],
             "linux_x64_files": [
                 "pack/uninstall-linux.AppImage"
@@ -80,7 +80,7 @@
             "destinations": {
                 "pack/application-core.zip": "{install_path}",
                 "pack/readme.txt": "{install_path}",
-                "pack/uninstall-windows.exe": "{install_path}",
+                "pack/uninstall-windows.zip": "{install_path}",
                 "pack/uninstall-linux.AppImage": "{install_path}",
                 "pack/uninstall-macos.zip": "{install_path}"
             }

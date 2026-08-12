@@ -67,7 +67,7 @@ Windows 安装器虽然是 x86 程序，但会检测操作系统的原生架构�
 
 顶层 `uninstaller` 对象分别配置 Windows、Linux 和 macOS 的卸载器包。其中 `source_file` 是随组件分发的源文件，`installed_executable` 是安装完成后的可执行文件相对路径。卸载器必须放入必选组件对应的平台文件列表，并在 `destinations` 中安装到 `{install_path}`。生产配置让 `main` 核心拥有卸载器，因此移除核心时也会移除卸载器和 Windows 注册表项；BepInEx 由独立组件拥有并会保留。
 
-`metadata.json` 中的 `product_registry_key` 与 `uninstall_registry_key` 是可复用安装器时必须自行设置的完整注册表路径，均位于 `Software\...` 下。组件可使用 `is_core_component` 明确标记核心（省略时默认为 `false`，旧配置继续回退到 `core_component_index`）；移除核心会删除卸载器、`.universal_installer` 和 Windows 注册项，即使其他独立组件仍然保留。安装完成后，组件版本、依赖、文件 SHA-256、文件归属和原文件备份索引保存在 `{install_path}/.universal_installer/install_info.uim`；许可证、图标和可用的页眉/侧栏图片也会复制到同目录的 `ui` 文件夹，供独立卸载器使用。安装信息是带版本标识并使用 zlib 压缩的专用二进制格式，不是明文 JSON。
+`metadata.json` 中的 `product_registry_key` 与 `uninstall_registry_key` 是可复用安装器时必须自行设置的完整注册表路径，均位于 `Software\...` 下。组件可使用 `is_core_component` 明确标记核心（省略时默认为 `false`，旧配置继续回退到 `core_component_index`）；移除核心会删除卸载器、`.universal_installer` 和 Windows 注册项，即使其他独立组件仍然保留。Windows 卸载器以 PyInstaller on-directory 包形式安装，避免 one-file 每次启动时解压 Qt 运行库；核心卸载后会在进程退出时清理整个运行目录。安装完成后，组件版本、依赖、文件 SHA-256、文件归属和原文件备份索引保存在 `{install_path}/.universal_installer/install_info.uim`；许可证、图标和可用的页眉/侧栏图片也会复制到同目录的 `ui` 文件夹，供独立卸载器使用。安装信息是带版本标识并使用 zlib 压缩的专用二进制格式，不是明文 JSON。
 
 组件可使用 `remove_directories_on_uninstall` 指定卸载该组件时需递归清理的生成目录，例如 `"{install_path}/plugins/application-core"`。路径必须严格位于安装目录内，不能指向安装根目录、安装信息目录或通过链接逃逸；目录内未由安装器记录的文件也会删除，因此只应配置该组件独占的目录。
 
@@ -94,7 +94,7 @@ GitHub Actions 使用固定架构和版本生成以下产物：
 - Linux：Python 3.8.18、PySide6 6.5.3 和 Nuitka，生成二进制文件与 AppImage
 - macOS：`macos-26-intel`、Python 3.8.18、PySide6 6.5.3 和 Nuitka，生成最低部署目标为 macOS 11 的 x86_64 应用
 
-同一批构建还会生成 `uninstall-windows-x86.exe`、`uninstall-linux-x64.bin`、`uninstall-linux-x64.AppImage` 和 `uninstall-macos.zip`。Linux 配置默认使用 AppImage，裸二进制保留给需要自行集成的场景。组装安装包时，应将默认产物放到 `pack/items.json` 的 `uninstaller.*.source_file` 指定位置。
+同一批构建还会生成 `uninstall-windows-x86.zip`、`uninstall-linux-x64.bin`、`uninstall-linux-x64.AppImage` 和 `uninstall-macos.zip`。Windows ZIP 中是无启动解压延迟的 on-directory 卸载器包。Linux 配置默认使用 AppImage，裸二进制保留给需要自行集成的场景。组装安装包时，应将默认产物放到 `pack/items.json` 的 `uninstaller.*.source_file` 指定位置。
 
 安装器和卸载器不强制使用 Fusion 或自定义 Qt 主题，而是保留当前平台提供的原生控件样式、字体和调色板。Windows 构建优先使用 Qt 的 `windowsvista` UxTheme 样式，因此 Windows 7 的 Aero、Windows 8/8.1 的 Metro、Windows 10 的 Fluent 外观和 Windows 11 的当前系统外观会由宿主系统决定；Windows 11 还会在支持时请求原生圆角和 Mica，失败时自动保留普通系统窗口。macOS 和 Linux 同样使用各自 Qt 平台插件提供的默认样式，显式设置的 `QT_STYLE_OVERRIDE` 会被保留。
 

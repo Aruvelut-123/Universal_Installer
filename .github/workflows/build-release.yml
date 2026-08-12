@@ -83,24 +83,27 @@ jobs:
           key: ${{ steps.python-cache.outputs.cache-key }}
       - name: Verify 32-bit Python
         run: python -c "import struct; assert struct.calcsize('P') == 4"
-      - name: Build uninstaller (PyInstaller)
+      - name: Build fast-starting uninstaller bundle (PyInstaller)
         run: |
-          python -m PyInstaller --onefile --windowed --uac-admin --noconfirm --clean --name uninstall-windows-x86 --icon pack/icon.ico uninstaller.py
+          python -m PyInstaller --onedir --windowed --uac-admin --noconfirm --clean --name uninstall-windows-x86 --icon pack/icon.ico uninstaller.py
       - name: Verify x86 executable
         shell: pwsh
         run: |
-          $binary = [System.IO.File]::ReadAllBytes("dist/uninstall-windows-x86.exe")
+          $binary = [System.IO.File]::ReadAllBytes("dist/uninstall-windows-x86/uninstall-windows-x86.exe")
           $peOffset = [BitConverter]::ToInt32($binary, 0x3c)
           $machine = [BitConverter]::ToUInt16($binary, $peOffset + 4)
           if ($machine -ne 0x014c) {
             throw "Expected an x86 PE executable, got machine type 0x$($machine.ToString('x4'))"
           }
+      - name: Package uninstaller bundle
+        shell: pwsh
+        run: Compress-Archive -Path dist/uninstall-windows-x86 -DestinationPath uninstall-windows-x86.zip
       - name: Upload uninstaller to Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: |
-            ./dist/uninstall-windows-x86.exe
+            ./uninstall-windows-x86.zip
 
   build_linux:
     name: Build for Linux (binary and AppImage)

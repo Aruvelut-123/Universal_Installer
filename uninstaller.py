@@ -667,6 +667,14 @@ def _current_uninstaller_container(install_root):
     executable = Path(sys.executable).resolve()
     if not _is_relative_to(executable, install_root):
         return None
+    if (
+        platform.system().lower() == "windows"
+        and getattr(sys, "frozen", False)
+        and executable.parent != install_root
+    ):
+        # PyInstaller's on-directory build starts directly from this folder.
+        # Defer removal of the complete runtime bundle until the process exits.
+        return executable.parent
     for parent in (executable, *executable.parents):
         if parent == install_root:
             break
@@ -917,7 +925,7 @@ def remove_running_uninstaller(path):
             "$ErrorActionPreference = 'SilentlyContinue'; "
             "Wait-Process -Id {pid}; "
             "for ($attempt = 0; $attempt -lt 40; $attempt++) {{ "
-            "Remove-Item -LiteralPath {target} -Force; "
+            "Remove-Item -LiteralPath {target} -Recurse -Force; "
             "if (-not (Test-Path -LiteralPath {target})) {{ exit 0 }}; "
             "Start-Sleep -Milliseconds 250 "
             "}}; exit 1"
