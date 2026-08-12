@@ -9,7 +9,8 @@ fi
 
 export DEBIAN_FRONTEND=noninteractive
 export PIP_CACHE_DIR=${PIP_CACHE_DIR:-/pip-cache}
-mkdir -p "$PIP_CACHE_DIR"
+export PIP_WHEEL_DIR=${PIP_WHEEL_DIR:-$PIP_CACHE_DIR/wheels}
+mkdir -p "$PIP_CACHE_DIR" "$PIP_WHEEL_DIR"
 apt-get update -qq
 apt-get install -y --no-install-recommends \
   build-essential ca-certificates ccache file patchelf wget \
@@ -20,7 +21,15 @@ apt-get install -y --no-install-recommends \
   libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
   libxcb-xfixes0 libxcb-xkb1
 
-python3 -m pip install -r requirements-linux-x86.txt
+python3 -m pip wheel \
+  --find-links "$PIP_WHEEL_DIR" \
+  --wheel-dir "$PIP_WHEEL_DIR" \
+  -r requirements-linux-x86.txt
+python3 -m pip install \
+  --no-index \
+  --find-links "$PIP_WHEEL_DIR" \
+  -r requirements-linux-x86.txt
+python3 -m pip cache info || true
 
 export CCACHE_DIR=${CCACHE_DIR:-/ccache}
 export CCACHE_MAXSIZE=${CCACHE_MAXSIZE:-1G}

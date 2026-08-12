@@ -1,5 +1,5 @@
 name: Set up Windows PyInstaller cache
-description: Restore PyInstaller's processed-binary cache for Windows x86 builds.
+description: Restore PyInstaller's incremental work and processed-binary caches.
 
 inputs:
   scope:
@@ -12,17 +12,21 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Configure PyInstaller cache directory
+    - name: Configure PyInstaller cache directories
       shell: pwsh
       run: |
         $cacheDirectory = Join-Path $env:GITHUB_WORKSPACE ".pyinstaller-cache-windows-x86"
-        New-Item -ItemType Directory -Force -Path $cacheDirectory | Out-Null
+        $workDirectory = Join-Path $env:GITHUB_WORKSPACE ".pyinstaller-work-windows-x86/${{ inputs.scope }}"
+        New-Item -ItemType Directory -Force -Path $cacheDirectory, $workDirectory | Out-Null
         "PYINSTALLER_CONFIG_DIR=$cacheDirectory" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "PYINSTALLER_WORKPATH=$workDirectory" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
     - name: Restore PyInstaller cache
       uses: actions/cache@v6
       with:
-        path: .pyinstaller-cache-windows-x86
+        path: |
+          .pyinstaller-cache-windows-x86
+          .pyinstaller-work-windows-x86/${{ inputs.scope }}
         key: pyinstaller-windows-x86-${{ inputs.scope }}-${{ inputs.dependency-hash }}-${{ github.sha }}
         restore-keys: |
           pyinstaller-windows-x86-${{ inputs.scope }}-${{ inputs.dependency-hash }}-

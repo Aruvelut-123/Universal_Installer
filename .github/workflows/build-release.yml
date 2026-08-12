@@ -47,7 +47,7 @@ jobs:
         run: python -c "import struct; assert struct.calcsize('P') == 4"
       - name: Build binary (PyInstaller)
         run: |
-          python -m PyInstaller --onefile --windowed --noconfirm --name main --icon pack/icon.ico --hidden-import vdf main.py
+          python -m PyInstaller --onefile --windowed --noconfirm --workpath "$env:PYINSTALLER_WORKPATH" --name main --icon pack/icon.ico --hidden-import vdf main.py
       - name: Verify x86 executable
         shell: pwsh
         run: |
@@ -93,7 +93,7 @@ jobs:
         run: python -c "import struct; assert struct.calcsize('P') == 4"
       - name: Build uninstaller (PyInstaller one-file)
         run: |
-          python -m PyInstaller --onefile --windowed --uac-admin --noconfirm --name uninstall-windows-x86 --icon pack/icon.ico uninstaller.py
+          python -m PyInstaller --onefile --windowed --uac-admin --noconfirm --workpath "$env:PYINSTALLER_WORKPATH" --name uninstall-windows-x86 --icon pack/icon.ico uninstaller.py
       - name: Verify x86 executable
         shell: pwsh
         run: |

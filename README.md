@@ -101,9 +101,9 @@ GitHub Actions 使用固定架构和版本生成以下产物：
 
 Linux 构建不设置 `QT_QPA_PLATFORM`，由 Qt 根据宿主会话和用户环境变量自动选择显示后端。
 
-pip 下载缓存按操作系统、Python 版本、解释器架构和依赖清单内容隔离。Linux i686 作业会将容器内的 pip 缓存挂载到 Actions 缓存，不会在每次构建时重新下载 Python 包。
+pip 下载缓存按操作系统、Python 版本、解释器架构和依赖清单内容隔离。Linux i686 作业会将容器内构建好的 wheel 仓库挂载到 Actions 缓存，后续作业可直接从本地 wheel 安装，不必重新下载或构建 Python 包。
 
-Linux 和 macOS 的 Nuitka 作业会持久化 ccache，复用未变更的 C/C++ 编译单元。Windows 使用 PyInstaller 组装预编译 Python 包，没有 C/C++ 编译阶段，因此 ccache 不适用；Windows 作业会同时持久化 pip 下载缓存和 PyInstaller 已处理二进制缓存，并且不再用 `--clean` 主动清空它。
+Linux 和 macOS 的 Nuitka 作业会持久化 ccache，复用未变更的 C/C++ 编译单元。Windows 使用 PyInstaller 组装预编译 Python 包，没有 C/C++ 编译阶段，因此 ccache 不适用；Windows 作业会同时持久化 pip 下载缓存、PyInstaller 全局缓存和增量工作目录，并且不再用 `--clean` 主动清空它。
 
 ## 日志
 

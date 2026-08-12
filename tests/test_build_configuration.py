@@ -71,6 +71,9 @@ class BuildConfigurationTests(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertIn("PIP_CACHE_DIR", linux_script)
+        self.assertIn("PIP_WHEEL_DIR", linux_script)
+        self.assertIn("pip wheel", linux_script)
+        self.assertIn("--no-index", linux_script)
 
         macos_action = (
             ROOT / ".github/actions/setup-macos-ccache/action.yml"
@@ -94,6 +97,8 @@ class BuildConfigurationTests(unittest.TestCase):
             ROOT / ".github/actions/setup-windows-pyinstaller-cache/action.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("PYINSTALLER_CONFIG_DIR", cache_action)
+        self.assertIn("PYINSTALLER_WORKPATH", cache_action)
+        self.assertIn(".pyinstaller-work-windows-x86", cache_action)
         self.assertIn("actions/cache@v6", cache_action)
 
         for relative_path in (
@@ -103,6 +108,9 @@ class BuildConfigurationTests(unittest.TestCase):
             workflow = (ROOT / relative_path).read_text(encoding="utf-8")
             self.assertEqual(
                 workflow.count("setup-windows-pyinstaller-cache"), 2
+            )
+            self.assertEqual(
+                workflow.count('--workpath "$env:PYINSTALLER_WORKPATH"'), 2
             )
             self.assertNotIn("--clean", workflow)
 
