@@ -1614,6 +1614,7 @@ class ComponentsPage(BasePage):
         self.loaded_install_root = None
         self.archive_size_cache = {}
         self.has_missing_required_files = False
+        self.size_calculation_enabled = False
 
         # First create every node so parents may appear after their children in JSON.
         for item in items:
@@ -1688,7 +1689,20 @@ class ComponentsPage(BasePage):
         # 空间信息
         self.space_label = QLabel("所需空间: 0 MB")
 
+        selection_tools = QHBoxLayout()
+        selection_tools.setSpacing(8)
+        self.selection_summary = QLabel()
+        self.selection_summary.setWordWrap(True)
+        selection_tools.addWidget(self.selection_summary, 1)
+        defaults_button = QPushButton("恢复默认")
+        defaults_button.clicked.connect(self.restore_default_selection)
+        selection_tools.addWidget(defaults_button)
+        all_button = QPushButton("选择全部")
+        all_button.clicked.connect(self.select_all_components)
+        selection_tools.addWidget(all_button)
+
         left_layout.addWidget(tip_label)
+        left_layout.addLayout(selection_tools)
         left_layout.addWidget(self.components_list)
         left_layout.addWidget(self.space_label)
 
@@ -1716,6 +1730,7 @@ class ComponentsPage(BasePage):
         self.next_button.setEnabled(not self.has_missing_required_files)
         self.add_button("取消(C)", self.on_cancel)
         self.on_select_change_size.connect(self.on_select_change_size_method)
+        self.parent.page_shown.connect(self.on_page_shown)
         self.synchronize_selection()
 
     def on_select_change_size_method(self, size:int):
@@ -1734,6 +1749,51 @@ class ComponentsPage(BasePage):
                 item.child(index)
                 for index in reversed(range(item.childCount()))
             )
+
+    def set_component_states(self, states):
+        with blocked_signals(self.components_list):
+            for component_id, tree_item in self.tree_items_by_id.items():
+                if not tree_item.flags() & Qt.ItemIsEnabled:
+                    continue
+                if self.items_by_id[component_id].get("required"):
+                    tree_item.setCheckState(0, Qt.Checked)
+                    continue
+                tree_item.setCheckState(
+                    0, states.get(component_id, Qt.Unchecked)
+                )
+        self.synchronize_selection()
+
+    def restore_default_selection(self):
+        self.set_component_states(self.default_states_by_id)
+
+    def select_all_components(self):
+        self.set_component_states({
+            component_id: Qt.Checked
+            for component_id in self.tree_items_by_id
+        })
+
+    def on_page_shown(self, name):
+        if name != "components" or self.size_calculation_enabled:
+            return
+        self.size_calculation_enabled = True
+        self.space_label.setText("正在计算所需空间...")
+        QTimer.singleShot(0, self.synchronize_selection)
+
+    def update_selection_summary(self):
+        selected = [
+            component_id
+            for component_id, tree_item in self.tree_items_by_id.items()
+            if tree_item.checkState(0) == Qt.Checked
+        ]
+        required_count = sum(
+            bool(self.items_by_id[component_id].get("required"))
+            for component_id in selected
+        )
+        self.selection_summary.setText(
+            "已选择 {}/{} 个组件（{} 个必选）".format(
+                len(selected), len(self.tree_items_by_id), required_count
+            )
+        )
 
     def on_next(self):
         # 保存选择的组件
@@ -1973,7 +2033,9 @@ class ComponentsPage(BasePage):
                 else:
                     parent.setCheckState(0, Qt.PartiallyChecked)
 
-        self.on_select_change_size.emit(self.get_selected_components_sizes())
+        self.update_selection_summary()
+        if self.size_calculation_enabled:
+            self.on_select_change_size.emit(self.get_selected_components_sizes())
 
     @staticmethod
     def _tree_depth(item):
@@ -2056,8 +2118,7 @@ class DirectoryPage(BasePage):
         self.path_input.textChanged.connect(self.update_disk_space)
         
         self.parent.page_shown.connect(self.page_shown)
-
-        self.update_directory()
+        self.initial_detection_started = False
 
     def browse_directory(self):
         directory = QFileDialog.getExistingDirectory(
@@ -2208,6 +2269,9 @@ class DirectoryPage(BasePage):
             self.required_label.setText(
                 f"所需空间：{format_size(self.parent.need_space)}"
             )
+            if not self.initial_detection_started:
+                self.initial_detection_started = True
+                QTimer.singleShot(0, self.update_directory)
 
     def _get_mount_point(self, path):
         """获取路径所在的挂载点（Linux/macOS）"""
