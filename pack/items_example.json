@@ -1,12 +1,12 @@
 {
     "uninstaller": {
         "windows": {
-            "source_file": "pack/uninstall-windows.exe",
-            "installed_executable": "uninstall-windows.exe"
+            "source_file": "pack/uninstall-windows-x86.exe",
+            "installed_executable": "uninstall-windows-x86.exe"
         },
         "linux": {
-            "source_file": "pack/uninstall-linux.AppImage",
-            "installed_executable": "uninstall-linux.AppImage"
+            "source_file": "pack/uninstall-linux-x86.AppImage",
+            "installed_executable": "uninstall-linux-x86.AppImage"
         },
         "darwin": {
             "source_file": "pack/uninstall-macos.zip",
@@ -30,6 +30,9 @@
             "windows_x64_files": [
                 "pack/runtime-windows-x64.zip"
             ],
+            "linux_x86_files": [
+                "pack/runtime-linux-x86.zip"
+            ],
             "linux_x64_files": [
                 "pack/runtime-linux-x64.zip"
             ],
@@ -39,6 +42,7 @@
             "destinations": {
                 "pack/runtime-windows-x86.zip": "{install_path}",
                 "pack/runtime-windows-x64.zip": "{install_path}",
+                "pack/runtime-linux-x86.zip": "{install_path}",
                 "pack/runtime-linux-x64.zip": "{install_path}",
                 "pack/runtime-macos.zip": "{install_path}"
             }
@@ -63,13 +67,16 @@
                 "pack/readme.txt"
             ],
             "windows_x86_files": [
-                "pack/uninstall-windows.exe"
+                "pack/uninstall-windows-x86.exe"
             ],
             "windows_x64_files": [
-                "pack/uninstall-windows.exe"
+                "pack/uninstall-windows-x86.exe"
+            ],
+            "linux_x86_files": [
+                "pack/uninstall-linux-x86.AppImage"
             ],
             "linux_x64_files": [
-                "pack/uninstall-linux.AppImage"
+                "pack/uninstall-linux-x86.AppImage"
             ],
             "macos_files": [
                 "pack/uninstall-macos.zip"
@@ -80,8 +87,8 @@
             "destinations": {
                 "pack/application-core.zip": "{install_path}",
                 "pack/readme.txt": "{install_path}",
-                "pack/uninstall-windows.exe": "{install_path}",
-                "pack/uninstall-linux.AppImage": "{install_path}",
+                "pack/uninstall-windows-x86.exe": "{install_path}",
+                "pack/uninstall-linux-x86.AppImage": "{install_path}",
                 "pack/uninstall-macos.zip": "{install_path}"
             }
         },

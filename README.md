@@ -19,10 +19,10 @@
 
 - Python 3.8
 - Windows 7 SP1 或更高版本：发布产物为 x86，可同时运行于 32 位和 64 位 Windows
-- Linux x86_64
+- Linux i686（32 位 x86）或兼容 32 位程序的 x86_64 系统
 - macOS 11 或更高版本：发布产物为 Intel x86_64，Apple Silicon 需要 Rosetta 2
 
-Windows 使用 PySide2 5.15.2（Qt 5），Linux 与 macOS 使用 PySide6 6.5.3（Qt 6）。建议为 Windows 7 安装全部系统更新。
+Windows 与 Linux i686 发布构建使用 PySide2/Qt 5，macOS 使用 PySide6/Qt 6。建议为 Windows 7 安装全部系统更新。
 
 安装依赖：
 
@@ -91,17 +91,18 @@ Windows 安装器虽然是 x86 程序，但会检测操作系统的原生架构�
 
 GitHub Actions 使用固定架构和版本生成以下产物：
 
-- Windows：Python 3.8.10、PySide2 5.15.2 和 PyInstaller 5.13.2，生成 `main-windows-x86.exe`
-- Linux：Python 3.8.18、PySide6 6.5.3 和 Nuitka，生成二进制文件与 AppImage
+- Windows：Python 3.8.10、PySide2 5.15.2 和 PyInstaller 5.13.2，生成 `main.exe`
+- Linux：Debian i386 容器、PySide2/Qt 5 和 Nuitka，生成真实的 i686 `main.bin` 与 `main.AppImage`
 - macOS：`macos-26-intel`、Python 3.8.18、PySide6 6.5.3 和 Nuitka，生成最低部署目标为 macOS 11 的 x86_64 应用
 
-同一批构建还会生成 `uninstall-windows-x86.exe`、`uninstall-linux-x64.bin`、`uninstall-linux-x64.AppImage` 和 `uninstall-macos.zip`。Windows 卸载器是可直接分发的单文件 EXE。Linux 配置默认使用 AppImage，裸二进制保留给需要自行集成的场景。组装安装包时，应将默认产物放到 `pack/items.json` 的 `uninstaller.*.source_file` 指定位置。
+安装器的四个主产物固定命名为 `main.exe`、`main.bin`、`main.AppImage` 和 `macos.zip`。同一批构建还会生成 `uninstall-windows-x86.exe`、`uninstall-linux-x86.bin`、`uninstall-linux-x86.AppImage` 和 `uninstall-macos.zip`。Windows 卸载器是可直接分发的单文件 EXE。Linux 配置默认使用 AppImage，裸二进制保留给需要自行集成的场景。x86 和 x64 Linux 都安装同一个 i686 卸载器，但 BepInEx 等运行时仍按宿主架构选择 x86 或 x64 产物。组装安装包时，应将默认产物放到 `pack/items.json` 的 `uninstaller.*.source_file` 指定位置。
 
 安装器和卸载器不强制使用 Fusion 或自定义 Qt 主题，而是保留当前平台提供的原生控件样式、字体和调色板。Windows 构建优先使用 Qt 的 `windowsvista` UxTheme 样式，因此 Windows 7 的 Aero、Windows 8/8.1 的 Metro、Windows 10 的 Fluent 外观和 Windows 11 的当前系统外观会由宿主系统决定；Windows 11 还会在支持时请求原生圆角和 Mica，失败时自动保留普通系统窗口。macOS 和 Linux 同样使用各自 Qt 平台插件提供的默认样式，显式设置的 `QT_STYLE_OVERRIDE` 会被保留。
 
 Linux 构建不设置 `QT_QPA_PLATFORM`，由 Qt 根据宿主会话和用户环境变量自动选择显示后端。
 
 pip 下载缓存按操作系统、Python 版本、解释器架构和 `requirements.txt` 内容隔离，x86 与 x64 构建不会共用错误的缓存。
+Linux Nuitka 作业还会持久化 i686 ccache，复用未变更 C/C++ 编译单元以加快后续构建。
 
 ## 日志
 

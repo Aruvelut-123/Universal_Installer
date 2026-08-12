@@ -11,6 +11,7 @@ build main.bat
 build.py
 /metadata.json
 .build-tools/
+.ccache-linux-x86/
 *.exe
 *.AppImage
 *.app
