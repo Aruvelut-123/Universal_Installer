@@ -22,7 +22,7 @@ jobs:
     name: Build for Windows (x86)
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
       - uses: ./.github/actions/setup-python-cache
@@ -64,7 +64,7 @@ jobs:
     name: Build uninstaller for Windows (x86)
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
       - uses: ./.github/actions/setup-python-cache
@@ -106,7 +106,7 @@ jobs:
     name: Build for Linux (i686 binary and AppImage)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
       - name: Restore i686 compiler cache
@@ -137,7 +137,7 @@ jobs:
     name: Build uninstaller for Linux (i686)
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
       - name: Restore i686 compiler cache
@@ -168,7 +168,7 @@ jobs:
     name: Build for macOS (x86_64 - runs on both Intel & Apple Silicon)
     runs-on: macos-26-intel
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
       - uses: ./.github/actions/setup-python-cache
@@ -260,7 +260,7 @@ jobs:
     name: Build uninstaller for macOS (x86_64)
     runs-on: macos-26-intel
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
       - uses: ./.github/actions/setup-python-cache
@@ -310,7 +310,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout release tag and history
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ env.RELEASE_TAG }}
           fetch-depth: 0
