@@ -41,6 +41,7 @@ from uninstaller import (
     load_manifest,
     register_windows_uninstaller,
     remove_windows_uninstall_entry,
+    responsive_ui_metrics,
 )
 
 try:
@@ -181,7 +182,7 @@ try:
         QAbstractItemView, QApplication, QMainWindow, QWidget, QStackedWidget,
         QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QCheckBox,
         QLineEdit, QFileDialog, QProgressBar, QGroupBox, QFrame, QMessageBox,
-        QTreeWidget, QTreeWidgetItem,
+        QSizePolicy, QTreeWidget, QTreeWidgetItem,
     )
     from PySide6.QtGui import QFontDatabase, QIcon, QPixmap
     from PySide6.QtCore import Qt, QThread, QTimer, Signal
@@ -191,7 +192,7 @@ except ImportError:
         QAbstractItemView, QApplication, QMainWindow, QWidget, QStackedWidget,
         QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QTextEdit, QCheckBox,
         QLineEdit, QFileDialog, QProgressBar, QGroupBox, QFrame, QMessageBox,
-        QTreeWidget, QTreeWidgetItem,
+        QSizePolicy, QTreeWidget, QTreeWidgetItem,
     )
     from PySide2.QtGui import QFontDatabase, QIcon, QPixmap
     from PySide2.QtCore import Qt, QThread, QTimer, Signal
@@ -1320,16 +1321,42 @@ class InstallThread(QThread):
             raise
 
 # 基础页面模板
+class ResponsiveImageLabel(QLabel):
+    """Scale an installer image to its widget while preserving its ratio."""
+
+    def __init__(self, image_path, vertical_policy=QSizePolicy.Expanding):
+        super().__init__()
+        self.source_pixmap = QPixmap(str(image_path))
+        self.setAlignment(Qt.AlignCenter)
+        self.setMinimumSize(1, 1)
+        self.setSizePolicy(QSizePolicy.Ignored, vertical_policy)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if self.source_pixmap.isNull():
+            return
+        available = self.contentsRect().size()
+        if available.width() <= 0 or available.height() <= 0:
+            return
+        self.setPixmap(self.source_pixmap.scaled(
+            available, Qt.KeepAspectRatio, Qt.SmoothTransformation
+        ))
+
+
 class BasePage(QWidget):
     def __init__(self, parent, has_left_area=False, has_banner=True):
         super().__init__(parent)
         self.parent = parent
+        self.has_left_area = has_left_area
+        self.has_banner = has_banner
 
         if not Path(INSTALLER_METADATA["left_pic"]).is_file():
             has_left_area = False
 
         if not Path(INSTALLER_METADATA["header_pic"]).is_file():
             has_banner = False
+        self.has_left_area = has_left_area
+        self.has_banner = has_banner
 
         if has_banner:
             # 根布局 - 纵向布局
@@ -1348,16 +1375,14 @@ class BasePage(QWidget):
         if has_left_area:
             # 左侧区域 - 卡通图片
             self.left_frame = QFrame()
-            self.left_frame.setFixedWidth(200)
+            self.left_frame.setMinimumWidth(120)
             self.left_layout = QVBoxLayout(self.left_frame)
             self.left_layout.setAlignment(Qt.AlignCenter)
 
             # 加载卡通图片
-            self.character_label = QLabel()
-            pixmap = QPixmap(get_installer_metadata()["left_pic"])
-            if not pixmap.isNull():
-                self.character_label.setPixmap(pixmap.scaled(170, 340, Qt.KeepAspectRatio, Qt.SmoothTransformation))
-            self.character_label.setAlignment(Qt.AlignCenter)
+            self.character_label = ResponsiveImageLabel(
+                get_installer_metadata()["left_pic"]
+            )
             self.left_layout.addWidget(self.character_label)
 
         # 右侧区域 - 内容区域
@@ -1372,12 +1397,9 @@ class BasePage(QWidget):
             self.top_layout = QVBoxLayout(self.top_frame)
 
             # banner
-            self.header = QLabel()
-            pixmap = QPixmap(get_installer_metadata()["header_pic"])
-            if not pixmap.isNull():
-                self.header.setPixmap(
-                    pixmap.scaled(150, 57, Qt.IgnoreAspectRatio, Qt.SmoothTransformation))
-            self.header.setAlignment(Qt.AlignLeft)
+            self.header = ResponsiveImageLabel(
+                get_installer_metadata()["header_pic"], QSizePolicy.Fixed
+            )
 
         # 添加标题
         self.title_label = QLabel()
@@ -1432,6 +1454,35 @@ class BasePage(QWidget):
 
         # 设置页面样式
         self.setup_ui()
+        self.update_responsive_layout()
+
+    def update_responsive_layout(self):
+        metrics = responsive_ui_metrics(
+            max(1, self.parent.width()), max(1, self.parent.height())
+        )
+        self.right_layout.setContentsMargins(
+            metrics["horizontal_margin"], metrics["vertical_margin"],
+            metrics["horizontal_margin"], metrics["vertical_margin"],
+        )
+        self.right_layout.setSpacing(metrics["spacing"])
+        self.content_layout.setSpacing(metrics["spacing"])
+        self.button_layout.setContentsMargins(
+            0, metrics["spacing"], 0, 0
+        )
+        self.button_layout.setSpacing(8)
+        if self.has_left_area:
+            self.left_frame.setFixedWidth(metrics["sidebar_width"])
+            self.left_layout.setContentsMargins(
+                metrics["spacing"], metrics["spacing"],
+                metrics["spacing"], metrics["spacing"],
+            )
+        if self.has_banner:
+            self.header.setFixedHeight(metrics["header_height"])
+            self.top_layout.setContentsMargins(
+                metrics["horizontal_margin"], metrics["vertical_margin"],
+                metrics["horizontal_margin"], 0,
+            )
+            self.top_layout.setSpacing(metrics["spacing"])
 
     def setup_ui(self):
         pass
@@ -2246,8 +2297,8 @@ class InstallPage(QWidget):
         super().__init__(parent)
         self.parent = parent
         # 主布局
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(20, 20, 20, 20)
+        self.main_layout = QVBoxLayout(self)
+        main_layout = self.main_layout
 
         # 标题
         title_label = QLabel(get_installer_metadata()["short_name"]+"安装")
@@ -2307,6 +2358,17 @@ class InstallPage(QWidget):
 
         # 初始化时显示日志区域
         self.log_area_visible = True
+        self.update_responsive_layout()
+
+    def update_responsive_layout(self):
+        metrics = responsive_ui_metrics(
+            max(1, self.parent.width()), max(1, self.parent.height())
+        )
+        self.main_layout.setContentsMargins(
+            metrics["horizontal_margin"], metrics["vertical_margin"],
+            metrics["horizontal_margin"], metrics["vertical_margin"],
+        )
+        self.main_layout.setSpacing(metrics["spacing"])
 
     def add_button(self, text, callback, style="default"):
         button = QPushButton(text)
@@ -2406,8 +2468,7 @@ class InstallerWindow(QMainWindow):
         self.setWindowTitle(PROGRAM_NAME)
         self.setWindowIcon(get_application_icon())
         apply_application_theme(get_system_theme())
-        self.setMinimumSize(*MINIMUM_WINDOW_SIZE)
-        self.resize(*DEFAULT_WINDOW_SIZE)
+        self.configure_window_size()
 
         style_hints = QApplication.styleHints()
         if hasattr(style_hints, "colorSchemeChanged"):
@@ -2450,6 +2511,32 @@ class InstallerWindow(QMainWindow):
         self.go_to_page("welcome")
         self.windows_style_profile = windows_style_profile()
         QTimer.singleShot(0, self.apply_native_windows_effects)
+
+    def configure_window_size(self):
+        screen = QApplication.primaryScreen()
+        if screen is None:
+            self.setMinimumSize(*MINIMUM_WINDOW_SIZE)
+            self.resize(*DEFAULT_WINDOW_SIZE)
+            return
+        available = screen.availableGeometry()
+        minimum_width = min(
+            MINIMUM_WINDOW_SIZE[0], max(480, available.width() - 40)
+        )
+        minimum_height = min(
+            MINIMUM_WINDOW_SIZE[1], max(400, available.height() - 40)
+        )
+        self.setMinimumSize(minimum_width, minimum_height)
+        self.resize(
+            max(minimum_width, min(980, round(available.width() * 0.74))),
+            max(minimum_height, min(720, round(available.height() * 0.80))),
+        )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        for page in getattr(self, "pages", {}).values():
+            update_layout = getattr(page, "update_responsive_layout", None)
+            if update_layout is not None:
+                update_layout()
 
     def apply_native_windows_effects(self):
         apply_windows_window_effects(
