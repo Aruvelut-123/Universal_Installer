@@ -9,7 +9,7 @@ updates:
       timezone: Asia/Shanghai
     open-pull-requests-limit: 5
     groups:
-      python-dependencies:
+      python-38-dependencies:
         patterns:
           - "*"
     commit-message:

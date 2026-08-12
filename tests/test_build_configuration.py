@@ -21,6 +21,11 @@ class BuildConfigurationTests(unittest.TestCase):
             self.assertIn('python-version: "3.8.10"', workflow)
             self.assertIn('python-version: "3.8.18"', workflow)
 
+        dependabot = (ROOT / ".github/dependabot.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("python-38-dependencies:", dependabot)
+
     def test_release_architecture_matrix_and_installer_names(self):
         for relative_path in (
             ".github/workflows/build-app.yml",
