@@ -55,6 +55,8 @@ Windows 安装器虽然是 x86 程序，但会检测操作系统的原生架构�
 | --- | --- |
 | `main.py` | 安装器界面、组件选择、路径检测与文件解压逻辑 |
 | `uninstaller.py` | 安装事务记录、原文件备份、控制面板注册与安全卸载逻辑 |
+| `responsive_ui.py` | 安装/卸载共享的响应式布局、像素画缩放、DPI、窗口与按钮辅助逻辑 |
+| `runtime_paths.py` | 安装/卸载共享的脚本、冻结程序、AppImage 与 macOS 应用路径解析 |
 | `metadata.json` | 本地 BB+ 安装器配置（不提交） |
 | `pack/items.json` | 本地 BB+ 组件、版本、依赖、平台文件和目标路径配置（不提交） |
 | `metadata_example.json` | 可复用的通用全局配置示例 |

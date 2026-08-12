@@ -25,7 +25,17 @@ import traceback
 from typing import Any
 
 from linux_display import configure_linux_qt_platform
-from responsive_ui import responsive_image_label_class, responsive_ui_metrics
+from responsive_ui import (
+    add_wizard_button,
+    configure_high_dpi,
+    configure_responsive_window,
+    responsive_image_label_class,
+    responsive_ui_metrics,
+)
+from runtime_paths import (
+    is_frozen_application as shared_is_frozen_application,
+    resolve_application_directory as shared_resolve_application_directory,
+)
 from windows_style import (
     apply_windows_window_effects,
     configure_windows_qt_style,
@@ -54,23 +64,14 @@ except ImportError:
 
 def is_frozen_application() -> bool:
     """Return whether the process is running from a frozen executable."""
-    return bool(getattr(sys, "frozen", False) or "__compiled__" in globals())
+    return shared_is_frozen_application(globals())
 
 
 def resolve_application_directory() -> Path:
     """Locate external assets beside the source file or compiled executable."""
-    appimage = os.environ.get("APPIMAGE")
-    if appimage:
-        appimage_path = Path(appimage).resolve()
-        if appimage_path.is_file():
-            return appimage_path.parent
-
-    launch_file = sys.executable if is_frozen_application() else __file__
-    directory = Path(launch_file).resolve().parent
-    for parent in (directory, *directory.parents):
-        if parent.suffix.lower() == ".app":
-            return parent.parent
-    return directory
+    return shared_resolve_application_directory(
+        __file__, frozen=is_frozen_application()
+    )
 
 
 APPLICATION_DIR = resolve_application_directory()
@@ -245,28 +246,6 @@ COMPONENT_METADATA_ALIASES = {
     "default_macos_install_path": "default_path_macos",
 }
 
-
-def configure_high_dpi() -> None:
-    """Enable device-independent Qt 5 scaling before QApplication exists."""
-    if QT_BINDING != "PySide2":
-        return
-
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
-
-    set_rounding_policy = getattr(
-        QApplication, "setHighDpiScaleFactorRoundingPolicy", None
-    )
-    policy_enum = getattr(Qt, "HighDpiScaleFactorRoundingPolicy", None)
-    pass_through = (
-        getattr(policy_enum, "PassThrough", None)
-        if policy_enum is not None
-        else None
-    )
-    if pass_through is None:
-        pass_through = getattr(Qt, "PassThrough", None)
-    if set_rounding_policy is not None and pass_through is not None:
-        set_rounding_policy(pass_through)
 
 REQUIRED_INSTALLER_METADATA = {
     "program_name", "short_name", "version",
@@ -1469,14 +1448,13 @@ class BasePage(QWidget):
         pass
 
     def add_button(self, text, callback, style="default"):
-        button = QPushButton(text)
-        button.setMinimumSize(100, 30)
-        if style == "primary":
-            button.setDefault(True)
+        return add_wizard_button(
+            QPushButton, self.button_layout, text, callback,
+            primary=style == "primary",
+        )
 
-        button.clicked.connect(callback)
-        self.button_layout.addWidget(button)
-        return button
+    def on_cancel(self):
+        self.parent.cancel_installation()
 
 
 # 欢迎页面
@@ -1506,9 +1484,6 @@ class WelcomePage(BasePage):
         # 添加按钮
         self.add_button("取消(C)", self.on_cancel)
         self.next_button = self.add_button("下一步(N)", self.on_next, "primary")
-
-    def on_cancel(self):
-        self.parent.cancel_installation()
 
     def on_next(self):
         self.parent.go_to_page("license")
@@ -1558,10 +1533,6 @@ class LicensePage(BasePage):
     def on_accept(self):
         if self.agree_checkbox.isChecked():
             self.parent.go_to_page("directory")
-
-    def on_cancel(self):
-        self.parent.cancel_installation()
-
 
 # 组件选择页面
 class ComponentsPage(BasePage):
@@ -1829,9 +1800,6 @@ class ComponentsPage(BasePage):
             self.parent.go_to_page("directory")
             return
         self.parent.go_to_page("install")
-
-    def on_cancel(self):
-        self.parent.cancel_installation()
 
     def on_item_hovered(self, item):
         component_key = item.data(0, Qt.UserRole)
@@ -2345,10 +2313,6 @@ class DirectoryPage(BasePage):
             )
         self.parent.go_to_page("components")
 
-    def on_cancel(self):
-        self.parent.cancel_installation()
-
-
 # 安装过程页面
 class InstallPage(QWidget):
     def __init__(self, parent):
@@ -2401,7 +2365,10 @@ class InstallPage(QWidget):
         self.button_layout.addWidget(self.details_button)
 
         # 添加按钮
-        self.next_button = self.add_button("下一步(F)", self.on_next, "primary")
+        self.next_button = add_wizard_button(
+            QPushButton, self.button_layout, "下一步(F)", self.on_next,
+            primary=True,
+        )
         self.next_button.setEnabled(False)
 
         main_layout.addLayout(self.button_layout)
@@ -2427,16 +2394,6 @@ class InstallPage(QWidget):
             metrics["horizontal_margin"], metrics["vertical_margin"],
         )
         self.main_layout.setSpacing(metrics["spacing"])
-
-    def add_button(self, text, callback, style="default"):
-        button = QPushButton(text)
-        button.setMinimumSize(100, 30)
-        if style == "primary":
-            button.setDefault(True)
-
-        button.clicked.connect(callback)
-        self.button_layout.addWidget(button)
-        return button
 
     def start_installation(self, path, components):
         # 隐藏左侧图片区域
@@ -2514,7 +2471,7 @@ class FinishPage(BasePage):
         self.parent.close()
 
     def on_cancel(self):
-        self.parent.close()
+        self.on_finish()
 
 
 # 主窗口
@@ -2526,7 +2483,13 @@ class InstallerWindow(QMainWindow):
         self.setWindowTitle(PROGRAM_NAME)
         self.setWindowIcon(get_application_icon())
         apply_application_theme(get_system_theme())
-        self.configure_window_size()
+        configure_responsive_window(
+            self, QApplication,
+            minimum_size=MINIMUM_WINDOW_SIZE,
+            default_size=DEFAULT_WINDOW_SIZE,
+            maximum_size=(980, 720),
+            screen_ratio=(0.74, 0.80),
+        )
 
         style_hints = QApplication.styleHints()
         if hasattr(style_hints, "colorSchemeChanged"):
@@ -2570,25 +2533,6 @@ class InstallerWindow(QMainWindow):
         self.go_to_page("welcome")
         self.windows_style_profile = windows_style_profile()
         QTimer.singleShot(0, self.apply_native_windows_effects)
-
-    def configure_window_size(self):
-        screen = QApplication.primaryScreen()
-        if screen is None:
-            self.setMinimumSize(*MINIMUM_WINDOW_SIZE)
-            self.resize(*DEFAULT_WINDOW_SIZE)
-            return
-        available = screen.availableGeometry()
-        minimum_width = min(
-            MINIMUM_WINDOW_SIZE[0], max(480, available.width() - 40)
-        )
-        minimum_height = min(
-            MINIMUM_WINDOW_SIZE[1], max(400, available.height() - 40)
-        )
-        self.setMinimumSize(minimum_width, minimum_height)
-        self.resize(
-            max(minimum_width, min(980, round(available.width() * 0.74))),
-            max(minimum_height, min(720, round(available.height() * 0.80))),
-        )
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -2649,7 +2593,7 @@ class InstallerWindow(QMainWindow):
 
 def main():
     configure_windows_app_id()
-    configure_high_dpi()
+    configure_high_dpi(QApplication, Qt, QT_BINDING)
     app = QApplication(sys.argv)
     app.setApplicationName(PROGRAM_NAME)
     app.setApplicationDisplayName(PROGRAM_NAME)

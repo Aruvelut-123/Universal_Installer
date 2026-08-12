@@ -15,7 +15,14 @@ from datetime import datetime
 from pathlib import Path
 
 from linux_display import configure_linux_qt_platform
-from responsive_ui import responsive_image_label_class, responsive_ui_metrics
+from responsive_ui import (
+    add_wizard_button,
+    configure_high_dpi,
+    configure_responsive_window,
+    responsive_image_label_class,
+    responsive_ui_metrics,
+)
+from runtime_paths import resolve_application_directory
 from windows_style import (
     apply_windows_window_effects,
     configure_windows_qt_style,
@@ -645,25 +652,14 @@ def remove_windows_uninstall_entry(registry=None):
             _delete_windows_registry_paths(hive, paths, winreg.KEY_WRITE | view)
 
 
-def resolve_application_directory():
-    appimage = os.environ.get("APPIMAGE")
-    if appimage:
-        appimage_path = Path(appimage).resolve()
-        if appimage_path.is_file():
-            return appimage_path.parent
-    launch_file = sys.executable if getattr(sys, "frozen", False) or "__compiled__" in globals() else __file__
-    directory = Path(launch_file).resolve().parent
-    for parent in (directory, *directory.parents):
-        if parent.suffix.lower() == ".app":
-            return parent.parent
-    return directory
-
-
 def load_manifest(manifest_path=None):
     path = (
         Path(manifest_path).resolve()
         if manifest_path
-        else resolve_application_directory() / INSTALL_DATA_DIRECTORY / INSTALL_MANIFEST_NAME
+        else resolve_application_directory(
+            __file__,
+            frozen=bool(getattr(sys, "frozen", False) or "__compiled__" in globals()),
+        ) / INSTALL_DATA_DIRECTORY / INSTALL_MANIFEST_NAME
     )
     try:
         manifest = _decode_manifest(path.read_bytes())
@@ -959,13 +955,6 @@ def remove_running_uninstaller(path):
         path.unlink()
 
 
-def configure_high_dpi(QApplication, Qt, binding):
-    if binding != "PySide2":
-        return
-    QApplication.setAttribute(Qt.AA_EnableHighDpiScaling, True)
-    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
-
-
 def resolve_uninstaller_ui_asset(manifest_path, manifest, role):
     """Resolve a recorded UI asset without allowing paths outside private data."""
     configuration = manifest.get("uninstaller_ui")
@@ -1037,7 +1026,13 @@ def create_uninstaller_window(manifest_path, manifest):
         def __init__(self):
             super().__init__()
             self.setWindowTitle("卸载 {}".format(product_name))
-            self.configure_window_size()
+            configure_responsive_window(
+                self, QApplication,
+                minimum_size=(640, 480),
+                default_size=(760, 560),
+                maximum_size=(920, 680),
+                screen_ratio=(0.72, 0.78),
+            )
             icon = resolve_uninstaller_ui_asset(
                 manifest_path, manifest, "icon"
             )
@@ -1065,21 +1060,6 @@ def create_uninstaller_window(manifest_path, manifest):
             self.apply_style()
             self.go_to_page("welcome")
             QTimer.singleShot(0, self.apply_native_windows_effects)
-
-        def configure_window_size(self):
-            screen = QApplication.primaryScreen()
-            if screen is None:
-                self.setMinimumSize(640, 480)
-                self.resize(760, 560)
-                return
-            available = screen.availableGeometry()
-            minimum_width = min(640, max(480, available.width() - 40))
-            minimum_height = min(480, max(400, available.height() - 40))
-            self.setMinimumSize(minimum_width, minimum_height)
-            self.resize(
-                max(minimum_width, min(920, round(available.width() * 0.72))),
-                max(minimum_height, min(680, round(available.height() * 0.78))),
-            )
 
         def apply_style(self):
             self.windows_style_profile = windows_style_profile()
@@ -1136,13 +1116,9 @@ def create_uninstaller_window(manifest_path, manifest):
 
         @staticmethod
         def add_button(layout, text, callback, primary=False):
-            button = QPushButton(text)
-            button.setMinimumSize(100, 30)
-            if primary:
-                button.setDefault(True)
-            button.clicked.connect(callback)
-            layout.addWidget(button)
-            return button
+            return add_wizard_button(
+                QPushButton, layout, text, callback, primary=primary
+            )
 
         def build_welcome_page(self):
             page, content, buttons = self.page_shell(
