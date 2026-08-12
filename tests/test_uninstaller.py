@@ -5,12 +5,13 @@ from pathlib import Path
 from unittest import mock
 
 import uninstaller
+from responsive_ui import responsive_ui_metrics
 
 
 class ComponentUninstallTests(unittest.TestCase):
     def test_responsive_ui_metrics_scale_with_bounded_dimensions(self):
-        compact = uninstaller.responsive_ui_metrics(640, 480)
-        large = uninstaller.responsive_ui_metrics(1600, 1000)
+        compact = responsive_ui_metrics(640, 480)
+        large = responsive_ui_metrics(1600, 1000)
 
         self.assertLess(compact["header_height"], large["header_height"])
         self.assertLess(compact["sidebar_width"], large["sidebar_width"])

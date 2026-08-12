@@ -15,6 +15,7 @@ from datetime import datetime
 from pathlib import Path
 
 from linux_display import configure_linux_qt_platform
+from responsive_ui import responsive_image_label_class, responsive_ui_metrics
 from windows_style import (
     apply_windows_window_effects,
     configure_windows_qt_style,
@@ -980,20 +981,6 @@ def resolve_uninstaller_ui_asset(manifest_path, manifest, role):
     return candidate
 
 
-def responsive_ui_metrics(width, height):
-    """Return bounded wizard dimensions derived from the current window size."""
-    width = max(1, int(width))
-    height = max(1, int(height))
-    compact = width < 720 or height < 520
-    return {
-        "horizontal_margin": max(14, min(32, width // 32)),
-        "vertical_margin": max(12, min(24, height // 32)),
-        "spacing": 8 if compact else 12,
-        "header_height": max(48, min(108, round(height * 0.14))),
-        "sidebar_width": max(128, min(280, round(width * 0.28))),
-    }
-
-
 def create_uninstaller_window(manifest_path, manifest):
     """Create the branded wizard window; the caller owns the QApplication."""
     try:
@@ -1023,27 +1010,9 @@ def create_uninstaller_window(manifest_path, manifest):
     product_name = ui_configuration.get("product_name", program_name)
     footer_text = ui_configuration.get("footer_text", "Universal Installer")
     core_component = manifest.get("core_component")
-
-    class ResponsiveImageLabel(QLabel):
-        """Render an image inside the available area without distorting it."""
-
-        def __init__(self, asset, vertical_policy):
-            super().__init__()
-            self.source_pixmap = QPixmap(str(asset))
-            self.setAlignment(Qt.AlignCenter)
-            self.setMinimumSize(1, 1)
-            self.setSizePolicy(QSizePolicy.Ignored, vertical_policy)
-
-        def resizeEvent(self, event):
-            super().resizeEvent(event)
-            if self.source_pixmap.isNull():
-                return
-            available = self.contentsRect().size()
-            if available.width() <= 0 or available.height() <= 0:
-                return
-            self.setPixmap(self.source_pixmap.scaled(
-                available, Qt.KeepAspectRatio, Qt.FastTransformation
-            ))
+    ResponsiveImageLabel = responsive_image_label_class(
+        Qt, QLabel, QPixmap, QSizePolicy
+    )
 
     class UninstallWorker(QThread):
         progress_updated = Signal(int, str)

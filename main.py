@@ -25,6 +25,7 @@ import traceback
 from typing import Any
 
 from linux_display import configure_linux_qt_platform
+from responsive_ui import responsive_image_label_class, responsive_ui_metrics
 from windows_style import (
     apply_windows_window_effects,
     configure_windows_qt_style,
@@ -41,7 +42,6 @@ from uninstaller import (
     load_manifest,
     register_windows_uninstaller,
     remove_windows_uninstall_entry,
-    responsive_ui_metrics,
 )
 
 try:
@@ -199,6 +199,9 @@ except ImportError:
     QT_BINDING = "PySide2"
 
 print(f"Qt binding: {QT_BINDING}")
+ResponsiveImageLabel = responsive_image_label_class(
+    Qt, QLabel, QPixmap, QSizePolicy
+)
 installer_metadata: dict[str, Any] | None = None
 
 INSTALLER_METADATA_ALIASES = {
@@ -1321,28 +1324,6 @@ class InstallThread(QThread):
             raise
 
 # 基础页面模板
-class ResponsiveImageLabel(QLabel):
-    """Scale an installer image to its widget while preserving its ratio."""
-
-    def __init__(self, image_path, vertical_policy=QSizePolicy.Expanding):
-        super().__init__()
-        self.source_pixmap = QPixmap(str(image_path))
-        self.setAlignment(Qt.AlignCenter)
-        self.setMinimumSize(1, 1)
-        self.setSizePolicy(QSizePolicy.Ignored, vertical_policy)
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self.source_pixmap.isNull():
-            return
-        available = self.contentsRect().size()
-        if available.width() <= 0 or available.height() <= 0:
-            return
-        self.setPixmap(self.source_pixmap.scaled(
-            available, Qt.KeepAspectRatio, Qt.FastTransformation
-        ))
-
-
 class BasePage(QWidget):
     def __init__(self, parent, has_left_area=False, has_banner=True):
         super().__init__(parent)
