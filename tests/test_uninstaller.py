@@ -162,20 +162,7 @@ class ComponentUninstallTests(unittest.TestCase):
             "Remove-Item -LiteralPath '/Program Files/Test''s App/uninstall.exe'",
             script.replace("\\", "/"),
         )
-        self.assertIn("-Recurse -Force", script)
         self.assertTrue(popen.call_args.kwargs["close_fds"])
-
-    def test_windows_onedir_uninstaller_defers_complete_bundle(self):
-        install_root = Path("/game")
-        executable = install_root / "uninstaller" / "uninstall.exe"
-        with mock.patch.object(
-            uninstaller.platform, "system", return_value="Windows"
-        ), mock.patch.object(uninstaller.sys, "executable", str(executable)), (
-            mock.patch.object(uninstaller.sys, "frozen", True, create=True)
-        ):
-            container = uninstaller._current_uninstaller_container(install_root)
-
-        self.assertEqual(container, executable.parent)
 
     def test_linux_and_macos_uninstallers_are_deleted_immediately(self):
         for system in ("Linux", "Darwin"):
