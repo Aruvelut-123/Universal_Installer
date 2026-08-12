@@ -8,6 +8,8 @@ if [[ "$target" != "installer" && "$target" != "uninstaller" ]]; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
+export PIP_CACHE_DIR=${PIP_CACHE_DIR:-/pip-cache}
+mkdir -p "$PIP_CACHE_DIR"
 apt-get update -qq
 apt-get install -y --no-install-recommends \
   build-essential ca-certificates ccache file patchelf wget \

@@ -1,0 +1,45 @@
+name: Set up macOS ccache
+description: Install ccache, restore its compiler cache, and expose its compiler wrappers.
+
+inputs:
+  scope:
+    description: Cache namespace for the build target.
+    required: true
+  dependency-hash:
+    description: Hash of inputs that select the compiler toolchain.
+    required: true
+  max-size:
+    description: Maximum size of the compiler cache.
+    required: false
+    default: 1G
+
+runs:
+  using: composite
+  steps:
+    - name: Install ccache
+      shell: bash
+      env:
+        HOMEBREW_NO_AUTO_UPDATE: "1"
+      run: |
+        brew list ccache >/dev/null 2>&1 || brew install ccache
+        echo "$(brew --prefix ccache)/libexec" >> "$GITHUB_PATH"
+        echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache-macos-x64" >> "$GITHUB_ENV"
+        echo "CCACHE_MAXSIZE=${{ inputs.max-size }}" >> "$GITHUB_ENV"
+        mkdir -p "$GITHUB_WORKSPACE/.ccache-macos-x64"
+
+    - name: Restore compiler cache
+      uses: actions/cache@v6
+      with:
+        path: .ccache-macos-x64
+        key: ccache-macos-x64-${{ inputs.scope }}-${{ inputs.dependency-hash }}-${{ github.sha }}
+        restore-keys: |
+          ccache-macos-x64-${{ inputs.scope }}-${{ inputs.dependency-hash }}-
+          ccache-macos-x64-${{ inputs.scope }}-
+
+    - name: Configure compiler cache
+      shell: bash
+      run: |
+        command -v clang
+        command -v clang++
+        ccache --set-config=max_size="${{ inputs.max-size }}"
+        ccache --zero-stats

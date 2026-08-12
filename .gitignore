@@ -12,6 +12,9 @@ build.py
 /metadata.json
 .build-tools/
 .ccache-linux-x86/
+.ccache-macos-x64/
+.pip-cache-linux-x86/
+.pyinstaller-cache-windows-x86/
 *.exe
 *.AppImage
 *.app

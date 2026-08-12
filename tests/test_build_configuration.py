@@ -20,7 +20,7 @@ class BuildConfigurationTests(unittest.TestCase):
             "'requirements*.txt'",
             "'pack/icon.ico'",
             "'scripts/**'",
-            "'.github/actions/setup-python-cache/**'",
+            "'.github/actions/**'",
             "'.github/workflows/build-app.yml'",
             "'.github/workflows/build-release.yml'",
         ):
@@ -65,6 +65,46 @@ class BuildConfigurationTests(unittest.TestCase):
             launcher = (ROOT / app_run).read_text(encoding="utf-8")
             self.assertNotIn("QT_SCALE_FACTOR", launcher)
             self.assertNotIn("QT_AUTO_SCREEN_SCALE_FACTOR", launcher)
+
+    def test_compiled_builds_persist_their_download_and_compiler_caches(self):
+        linux_script = (ROOT / "scripts/build_linux_x86.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("PIP_CACHE_DIR", linux_script)
+
+        macos_action = (
+            ROOT / ".github/actions/setup-macos-ccache/action.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("brew install ccache", macos_action)
+        self.assertIn("/libexec", macos_action)
+        self.assertIn("actions/cache@v6", macos_action)
+
+        for relative_path in (
+            ".github/workflows/build-app.yml",
+            ".github/workflows/build-release.yml",
+        ):
+            workflow = (ROOT / relative_path).read_text(encoding="utf-8")
+            self.assertEqual(workflow.count("Restore i686 pip cache"), 2)
+            self.assertEqual(workflow.count("PIP_CACHE_DIR=/pip-cache"), 2)
+            self.assertEqual(workflow.count("setup-macos-ccache"), 2)
+            self.assertEqual(workflow.count("ccache --show-stats"), 2)
+
+    def test_windows_builds_reuse_pyinstaller_cache(self):
+        cache_action = (
+            ROOT / ".github/actions/setup-windows-pyinstaller-cache/action.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("PYINSTALLER_CONFIG_DIR", cache_action)
+        self.assertIn("actions/cache@v6", cache_action)
+
+        for relative_path in (
+            ".github/workflows/build-app.yml",
+            ".github/workflows/build-release.yml",
+        ):
+            workflow = (ROOT / relative_path).read_text(encoding="utf-8")
+            self.assertEqual(
+                workflow.count("setup-windows-pyinstaller-cache"), 2
+            )
+            self.assertNotIn("--clean", workflow)
 
     def test_x64_linux_gets_x86_uninstaller_but_x64_runtime(self):
         items = json.loads(
