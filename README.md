@@ -104,6 +104,8 @@ Linux 构建不设置 `QT_QPA_PLATFORM`，由 Qt 根据宿主会话和用户环�
 pip 下载缓存按操作系统、Python 版本、解释器架构和 `requirements.txt` 内容隔离，x86 与 x64 构建不会共用错误的缓存。
 Linux Nuitka 作业还会持久化 i686 ccache，复用未变更 C/C++ 编译单元以加快后续构建。
 
+Dependabot 通过根目录的 `.python-version` 以 Python 3.8 作为兼容性目标，不会提交仅支持更新 Python 的 PyPI 版本。
+
 ## 日志
 
 程序启动后会在 `logs/` 下生成带时间戳的日志：
