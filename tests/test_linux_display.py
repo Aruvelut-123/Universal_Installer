@@ -4,7 +4,7 @@ from linux_display import configure_linux_qt_platform
 
 
 class LinuxDisplayTests(unittest.TestCase):
-    def test_wayland_session_uses_native_backend_with_x11_fallback(self):
+    def test_wayland_session_is_forced_through_xwayland(self):
         environment = {
             "XDG_SESSION_TYPE": "wayland",
             "WAYLAND_DISPLAY": "wayland-0",
@@ -13,9 +13,21 @@ class LinuxDisplayTests(unittest.TestCase):
 
         self.assertEqual(
             configure_linux_qt_platform(environment, "Linux"),
-            "wayland;xcb",
+            "xcb",
         )
-        self.assertEqual(environment["QT_QPA_PLATFORM"], "wayland;xcb")
+        self.assertEqual(environment["QT_QPA_PLATFORM"], "xcb")
+
+    def test_explicit_wayland_backend_is_replaced(self):
+        environment = {
+            "QT_QPA_PLATFORM": "wayland",
+            "WAYLAND_DISPLAY": "wayland-0",
+            "DISPLAY": ":0",
+        }
+
+        self.assertEqual(
+            configure_linux_qt_platform(environment, "Linux"), "xcb"
+        )
+        self.assertEqual(environment["QT_QPA_PLATFORM"], "xcb")
 
     def test_x11_session_uses_xcb(self):
         environment = {"XDG_SESSION_TYPE": "x11", "DISPLAY": ":0"}
@@ -23,7 +35,7 @@ class LinuxDisplayTests(unittest.TestCase):
             configure_linux_qt_platform(environment, "Linux"), "xcb"
         )
 
-    def test_explicit_platform_is_preserved(self):
+    def test_explicit_non_wayland_platform_is_preserved(self):
         environment = {
             "QT_QPA_PLATFORM": "offscreen",
             "WAYLAND_DISPLAY": "wayland-0",
