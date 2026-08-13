@@ -43,7 +43,7 @@ class ComponentUninstallTests(unittest.TestCase):
             ("BepInEx/core/runtime.dll", b"runtime"),
             ("BepInEx/plugins/mod.dll", b"mod"),
             ("shared.dll", b"shared"),
-            ("uninstall.AppImage", b"uninstaller"),
+            ("uninstall-linux-x86.bin", b"uninstaller"),
         ):
             path = root / name
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -91,7 +91,7 @@ class ComponentUninstallTests(unittest.TestCase):
                     "components": ["core", "api"],
                 },
                 {
-                    "path": "uninstall.AppImage", "backup": None,
+                    "path": "uninstall-linux-x86.bin", "backup": None,
                     "components": ["core"],
                 },
             ],
@@ -135,7 +135,7 @@ class ComponentUninstallTests(unittest.TestCase):
     def test_core_uninstall_keeps_runtime_mods_and_removes_registry(self):
         temporary, root, manifest_path, manifest = self.make_installation()
         self.addCleanup(temporary.cleanup)
-        running_uninstaller = root / "uninstall.AppImage"
+        running_uninstaller = root / "uninstall-linux-x86.bin"
         with mock.patch.object(
             uninstaller, "remove_windows_uninstall_entry"
         ) as remove, mock.patch.object(

@@ -44,29 +44,30 @@ class BuildConfigurationTests(unittest.TestCase):
             self.assertIn('i386/debian:bullseye', workflow)
             self.assertIn('dist/main.exe', workflow)
             self.assertIn('main.bin', workflow)
-            self.assertIn('main.AppImage', workflow)
             self.assertIn('macos.zip', workflow)
             self.assertNotIn('main-windows-x86.exe', workflow)
             self.assertNotIn('uninstall-linux-x64', workflow)
+            self.assertNotIn('AppImage', workflow)
+            self.assertNotIn('nuitka', workflow.lower())
 
-    def test_linux_build_verifies_i686_and_uses_ccache(self):
+    def test_linux_build_uses_pyinstaller_and_smoke_tests_i686(self):
         script = (ROOT / "scripts/build_linux_x86.sh").read_text(
             encoding="utf-8"
         )
         self.assertIn('ELF 32-bit.*Intel 80386', script)
-        self.assertIn('/usr/lib/ccache', script)
-        self.assertIn('ccache --show-stats', script)
-        self.assertIn('appimagetool-i686.AppImage', script)
+        self.assertEqual(
+            script.count('python3 scripts/run_linux_pyinstaller.py'), 2
+        )
+        launcher = (ROOT / "scripts/run_linux_pyinstaller.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('compat.PY3_BASE_MODULES.add("ipaddress")', launcher)
+        self.assertEqual(script.count('smoke_test ./'), 2)
+        self.assertIn('QT_QPA_PLATFORM=offscreen', script)
+        self.assertNotIn('AppImage', script)
+        self.assertNotIn('nuitka', script.lower())
 
-        for app_run in (
-            "scripts/linux-main-apprun",
-            "scripts/linux-uninstaller-apprun",
-        ):
-            launcher = (ROOT / app_run).read_text(encoding="utf-8")
-            self.assertNotIn("QT_SCALE_FACTOR", launcher)
-            self.assertNotIn("QT_AUTO_SCREEN_SCALE_FACTOR", launcher)
-
-    def test_compiled_builds_persist_their_download_and_compiler_caches(self):
+    def test_packaging_builds_persist_pip_and_pyinstaller_caches(self):
         linux_script = (ROOT / "scripts/build_linux_x86.sh").read_text(
             encoding="utf-8"
         )
@@ -75,13 +76,6 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("pip wheel", linux_script)
         self.assertIn("--no-index", linux_script)
 
-        macos_action = (
-            ROOT / ".github/actions/setup-macos-ccache/action.yml"
-        ).read_text(encoding="utf-8")
-        self.assertIn("brew install ccache", macos_action)
-        self.assertIn("/libexec", macos_action)
-        self.assertIn("actions/cache@v6", macos_action)
-
         for relative_path in (
             ".github/workflows/build-app.yml",
             ".github/workflows/build-release.yml",
@@ -89,8 +83,11 @@ class BuildConfigurationTests(unittest.TestCase):
             workflow = (ROOT / relative_path).read_text(encoding="utf-8")
             self.assertEqual(workflow.count("Restore i686 pip cache"), 2)
             self.assertEqual(workflow.count("PIP_CACHE_DIR=/pip-cache"), 2)
-            self.assertEqual(workflow.count("setup-macos-ccache"), 2)
-            self.assertEqual(workflow.count("ccache --show-stats"), 2)
+            self.assertEqual(workflow.count("Restore i686 PyInstaller cache"), 2)
+            self.assertEqual(workflow.count("Restore macOS PyInstaller cache"), 2)
+            self.assertEqual(workflow.count(".pyinstaller-work-linux-x86"), 6)
+            self.assertEqual(workflow.count(".pyinstaller-work-macos-x64"), 4)
+            self.assertNotIn("ccache", workflow.lower())
 
     def test_windows_builds_reuse_pyinstaller_cache(self):
         cache_action = (

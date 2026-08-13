@@ -26,18 +26,5 @@ class RuntimePathTests(unittest.TestCase):
 
         self.assertEqual(result, Path("/Applications"))
 
-    def test_existing_appimage_takes_precedence(self):
-        with tempfile.TemporaryDirectory() as directory:
-            appimage = Path(directory) / "installer.AppImage"
-            appimage.write_bytes(b"appimage")
-
-            result = resolve_application_directory(
-                "unused.py", frozen=False,
-                environment={"APPIMAGE": str(appimage)},
-            )
-
-            self.assertEqual(result, appimage.parent.resolve())
-
-
 if __name__ == "__main__":
     unittest.main()
