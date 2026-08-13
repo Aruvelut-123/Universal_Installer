@@ -8,8 +8,9 @@ if [[ "$target" != "installer" && "$target" != "uninstaller" ]]; then
 fi
 
 export DEBIAN_FRONTEND=noninteractive
-export PIP_CACHE_DIR=${PIP_CACHE_DIR:-/pip-cache}
-export PIP_WHEEL_DIR=${PIP_WHEEL_DIR:-$PIP_CACHE_DIR/wheels}
+PIP_CACHE_ROOT=${PIP_CACHE_DIR:-/pip-cache}
+export PIP_CACHE_DIR=$PIP_CACHE_ROOT/http
+export PIP_WHEEL_DIR=${PIP_WHEEL_DIR:-$PIP_CACHE_ROOT/wheels}
 export PYINSTALLER_WORKPATH=${PYINSTALLER_WORKPATH:-/pyinstaller-work/$target}
 mkdir -p "$PIP_CACHE_DIR" "$PIP_WHEEL_DIR" "$PYINSTALLER_WORKPATH"
 
@@ -56,6 +57,7 @@ if [[ "$target" == "installer" ]]; then
     --workpath "$PYINSTALLER_WORKPATH" \
     --specpath "$PYINSTALLER_WORKPATH" \
     --name main.bin \
+    --hidden-import ipaddress \
     --hidden-import vdf \
     main.py
   chmod +x main.bin
@@ -70,6 +72,7 @@ else
     --workpath "$PYINSTALLER_WORKPATH" \
     --specpath "$PYINSTALLER_WORKPATH" \
     --name uninstall-linux-x86.bin \
+    --hidden-import ipaddress \
     uninstaller.py
   chmod +x uninstall-linux-x86.bin
   verify_i386 uninstall-linux-x86.bin
