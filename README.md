@@ -92,10 +92,10 @@ Windows 安装器虽然是 x86 程序，但会检测操作系统的原生架构�
 GitHub Actions 使用固定架构和版本生成以下产物：
 
 - Windows：Python 3.8.10、PySide2 5.15.2 和 PyInstaller 5.13.2，生成 `main.exe`
-- Linux：Debian i386 容器、PySide2/Qt 5 和 Nuitka，生成真实的 i686 `main.bin` 与 `main.AppImage`
-- macOS：`macos-26-intel`、Python 3.8.18、PySide6 6.5.3 和 Nuitka，生成最低部署目标为 macOS 11 的 x86_64 应用
+- Linux：Debian i386 容器、PySide2/Qt 5 和 PyInstaller 5.13.2，生成真实的 i686 `main.bin`
+- macOS：`macos-26-intel`、Python 3.8.18、PySide6 6.5.3 和 PyInstaller 5.13.2，生成最低部署目标为 macOS 11 的 x86_64 应用
 
-安装器的四个主产物固定命名为 `main.exe`、`main.bin`、`main.AppImage` 和 `macos.zip`。同一批构建还会生成 `uninstall-windows-x86.exe`、`uninstall-linux-x86.bin`、`uninstall-linux-x86.AppImage` 和 `uninstall-macos.zip`。Windows 卸载器是可直接分发的单文件 EXE。Linux 配置默认使用 AppImage，裸二进制保留给需要自行集成的场景。x86 和 x64 Linux 都安装同一个 i686 卸载器，但 BepInEx 等运行时仍按宿主架构选择 x86 或 x64 产物。组装安装包时，应将默认产物放到 `pack/items.json` 的 `uninstaller.*.source_file` 指定位置。
+安装器的三个主产物固定命名为 `main.exe`、`main.bin` 和 `macos.zip`。同一批构建还会生成 `uninstall-windows-x86.exe`、`uninstall-linux-x86.bin` 和 `uninstall-macos.zip`。Windows 与 Linux 卸载器是可直接分发的单文件程序。x86 和 x64 Linux 都安装同一个 i686 卸载器，但 BepInEx 等运行时仍按宿主架构选择 x86 或 x64 产物。组装安装包时，应将默认产物放到 `pack/items.json` 的 `uninstaller.*.source_file` 指定位置。
 
 安装器和卸载器不强制使用 Fusion 或自定义 Qt 主题，而是保留当前平台提供的原生控件样式、字体和调色板。Windows 构建优先使用 Qt 的 `windowsvista` UxTheme 样式，因此 Windows 7 的 Aero、Windows 8/8.1 的 Metro、Windows 10 的 Fluent 外观和 Windows 11 的当前系统外观会由宿主系统决定；Windows 11 还会在支持时请求原生圆角和 Mica，失败时自动保留普通系统窗口。macOS 和 Linux 同样使用各自 Qt 平台插件提供的默认样式，显式设置的 `QT_STYLE_OVERRIDE` 会被保留。
 
@@ -103,7 +103,7 @@ Linux 构建不设置 `QT_QPA_PLATFORM`，由 Qt 根据宿主会话和用户环�
 
 pip 下载缓存按操作系统、Python 版本、解释器架构和依赖清单内容隔离。Linux i686 作业会将容器内构建好的 wheel 仓库挂载到 Actions 缓存，后续作业可直接从本地 wheel 安装，不必重新下载或构建 Python 包。
 
-Linux 和 macOS 的 Nuitka 作业会持久化 ccache，复用未变更的 C/C++ 编译单元。Windows 使用 PyInstaller 组装预编译 Python 包，没有 C/C++ 编译阶段，因此 ccache 不适用；Windows 作业会同时持久化 pip 下载缓存、PyInstaller 全局缓存和增量工作目录，并且不再用 `--clean` 主动清空它。
+Windows、Linux 和 macOS 构建统一使用 PyInstaller。Actions 按操作系统、Python 版本、解释器架构和依赖清单隔离 pip 下载缓存，并为每个平台及安装器/卸载器作用域分别持久化 PyInstaller 增量工作目录。构建不会使用 `--clean` 主动清空缓存。
 
 ## 日志
 
