@@ -1475,7 +1475,26 @@ def run_gui(manifest_path, manifest):
     return execute()
 
 
+def run_smoke_test():
+    """Verify that the frozen Qt runtime starts without an install manifest."""
+    try:
+        from PySide6.QtCore import Qt, QTimer
+        from PySide6.QtWidgets import QApplication
+        binding = "PySide6"
+    except ImportError:
+        from PySide2.QtCore import Qt, QTimer
+        from PySide2.QtWidgets import QApplication
+        binding = "PySide2"
+    configure_high_dpi(QApplication, Qt, binding)
+    app = QApplication(sys.argv)
+    QTimer.singleShot(0, app.quit)
+    execute = getattr(app, "exec", None) or app.exec_
+    return execute()
+
+
 def main():
+    if os.environ.get("UNIVERSAL_INSTALLER_SMOKE_TEST") == "1":
+        return run_smoke_test()
     parser = argparse.ArgumentParser(description="Universal Installer uninstaller")
     parser.add_argument("--manifest", help="Path to install_info.uim")
     arguments = parser.parse_args()

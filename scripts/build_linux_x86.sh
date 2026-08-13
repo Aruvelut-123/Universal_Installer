@@ -41,7 +41,10 @@ verify_i386() {
 smoke_test() {
   local executable=$1
   local status=0
-  timeout 20s env QT_QPA_PLATFORM=offscreen "$executable" || status=$?
+  timeout 20s env \
+    QT_QPA_PLATFORM=offscreen \
+    UNIVERSAL_INSTALLER_SMOKE_TEST=1 \
+    "$executable" || status=$?
   if [[ "$status" -ne 0 && "$status" -ne 124 ]]; then
     echo "Linux binary smoke test failed with exit code $status" >&2
     return "$status"

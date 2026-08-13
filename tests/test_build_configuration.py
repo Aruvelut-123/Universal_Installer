@@ -64,6 +64,11 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn('compat.PY3_BASE_MODULES.add("ipaddress")', launcher)
         self.assertEqual(script.count('smoke_test ./'), 2)
         self.assertIn('QT_QPA_PLATFORM=offscreen', script)
+        self.assertIn('UNIVERSAL_INSTALLER_SMOKE_TEST=1', script)
+        for entrypoint in ("main.py", "uninstaller.py"):
+            source = (ROOT / entrypoint).read_text(encoding="utf-8")
+            self.assertIn('UNIVERSAL_INSTALLER_SMOKE_TEST', source)
+            self.assertIn('def run_smoke_test(', source)
         self.assertNotIn('AppImage', script)
         self.assertNotIn('nuitka', script.lower())
 

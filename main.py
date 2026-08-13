@@ -196,6 +196,21 @@ print(f"Qt binding: {QT_BINDING}")
 ResponsiveImageLabel = responsive_image_label_class(
     Qt, QLabel, QPixmap, QSizePolicy
 )
+
+
+def run_smoke_test() -> int:
+    """Verify that the frozen Qt runtime starts without release payloads."""
+    configure_high_dpi(QApplication, Qt, QT_BINDING)
+    app = QApplication(sys.argv)
+    QTimer.singleShot(0, app.quit)
+    execute = getattr(app, "exec", None) or app.exec_
+    return execute()
+
+
+if os.environ.get("UNIVERSAL_INSTALLER_SMOKE_TEST") == "1":
+    sys.exit(run_smoke_test())
+
+
 installer_metadata: dict[str, Any] | None = None
 
 INSTALLER_METADATA_ALIASES = {
