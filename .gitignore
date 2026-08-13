@@ -21,6 +21,7 @@ build.py
 *.app
 /main.bin
 /uninstall-linux-x86.bin
+/smoke-report-*.json
 __pycache__/
 *.py[cod]
 testaudios/

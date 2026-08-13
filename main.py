@@ -199,12 +199,84 @@ ResponsiveImageLabel = responsive_image_label_class(
 
 
 def run_smoke_test() -> int:
-    """Verify that the frozen Qt runtime starts without release payloads."""
-    configure_high_dpi(QApplication, Qt, QT_BINDING)
-    app = QApplication(sys.argv)
-    QTimer.singleShot(0, app.quit)
-    execute = getattr(app, "exec", None) or app.exec_
-    return execute()
+    """Exercise packaged dependencies without requiring release payloads."""
+    results = []
+
+    def check(name, function):
+        try:
+            detail = function()
+            results.append({
+                "check": name,
+                "status": "passed",
+                "detail": str(detail or "ok"),
+            })
+        except Exception as error:
+            results.append({
+                "check": name,
+                "status": "failed",
+                "detail": "{}: {}".format(type(error).__name__, error),
+            })
+
+    def check_frozen_runtime():
+        if not is_frozen_application():
+            raise RuntimeError("process is not frozen")
+        return Path(sys.executable).name
+
+    def check_application_directory():
+        directory = resolve_application_directory()
+        if not directory.is_dir():
+            raise RuntimeError("application directory does not exist")
+        return directory
+
+    def check_archive_backends():
+        payload = b"smoke-test"
+        if not callable(getattr(rarfile, "RarFile", None)):
+            raise RuntimeError("rarfile backend is unavailable")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with zipfile.ZipFile(root / "sample.zip", "w") as archive:
+                archive.writestr("sample.txt", payload)
+            with zipfile.ZipFile(root / "sample.zip") as archive:
+                if archive.read("sample.txt") != payload:
+                    raise RuntimeError("zip round trip failed")
+            with py7zr.SevenZipFile(root / "sample.7z", "w") as archive:
+                archive.writestr(payload, "sample.txt")
+            with py7zr.SevenZipFile(root / "sample.7z", "r") as archive:
+                archive.extractall(path=root / "sevenzip")
+            if (root / "sevenzip" / "sample.txt").read_bytes() != payload:
+                raise RuntimeError("7z round trip failed")
+        return "zipfile, py7zr, rarfile"
+
+    def check_vdf_parser():
+        import vdf as vdf_module
+        parsed = vdf_module.loads('"root"\n{\n"value" "ok"\n}\n')
+        if parsed.get("root", {}).get("value") != "ok":
+            raise RuntimeError("VDF parser returned unexpected data")
+        return "vdf"
+
+    def check_qt_application():
+        configure_high_dpi(QApplication, Qt, QT_BINDING)
+        app = QApplication.instance() or QApplication(sys.argv)
+        QTimer.singleShot(0, app.quit)
+        execute = getattr(app, "exec", None) or app.exec_
+        exit_code = execute()
+        if exit_code != 0:
+            raise RuntimeError("Qt event loop exited with {}".format(exit_code))
+        return QT_BINDING
+
+    check("frozen runtime", check_frozen_runtime)
+    check("application directory", check_application_directory)
+    check("archive backends", check_archive_backends)
+    check("VDF parser", check_vdf_parser)
+    check("Qt application and event loop", check_qt_application)
+    report_path = os.environ.get("UNIVERSAL_INSTALLER_SMOKE_REPORT")
+    report = {"artifact": "installer", "checks": results}
+    if report_path:
+        Path(report_path).write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    print("SMOKE_TEST_REPORT=" + json.dumps(report, ensure_ascii=False))
+    return 1 if any(item["status"] == "failed" for item in results) else 0
 
 
 if os.environ.get("UNIVERSAL_INSTALLER_SMOKE_TEST") == "1":

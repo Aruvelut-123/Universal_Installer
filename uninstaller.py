@@ -10,6 +10,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 import zlib
 from datetime import datetime
 from pathlib import Path
@@ -1476,7 +1477,72 @@ def run_gui(manifest_path, manifest):
 
 
 def run_smoke_test():
-    """Verify that the frozen Qt runtime starts without an install manifest."""
+    """Exercise packaged uninstaller functions without an install manifest."""
+    results = []
+
+    def check(name, function):
+        try:
+            detail = function()
+            results.append({
+                "check": name,
+                "status": "passed",
+                "detail": str(detail or "ok"),
+            })
+        except Exception as error:
+            results.append({
+                "check": name,
+                "status": "failed",
+                "detail": "{}: {}".format(type(error).__name__, error),
+            })
+
+    def check_frozen_runtime():
+        if not getattr(sys, "frozen", False):
+            raise RuntimeError("process is not frozen")
+        return Path(sys.executable).name
+
+    def check_application_directory():
+        directory = resolve_application_directory(
+            __file__, frozen=bool(getattr(sys, "frozen", False))
+        )
+        if not directory.is_dir():
+            raise RuntimeError("application directory does not exist")
+        return directory
+
+    def check_manifest_codec():
+        manifest = {
+            "schema_version": 2,
+            "install_root": "/smoke-test",
+            "components": [{"id": "core", "name": "Core"}],
+        }
+        if _decode_manifest(_encode_manifest(manifest)) != manifest:
+            raise RuntimeError("manifest round trip failed")
+        return "UIM schema 2"
+
+    def check_dependency_closure():
+        manifest = {
+            "components": [
+                {"id": "runtime", "dependencies": []},
+                {"id": "core", "dependencies": ["runtime"]},
+            ]
+        }
+        if dependent_removal_closure(manifest, {"runtime"}) != {
+            "runtime", "core"
+        }:
+            raise RuntimeError("dependent component was not selected")
+        return "transitive dependent selection"
+
+    def check_path_safety():
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            safe = _resolve_uninstall_directory(root, "plugins/example")
+            if not _is_relative_to(safe, root):
+                raise RuntimeError("safe path escaped install root")
+            try:
+                _resolve_uninstall_directory(root, "../outside")
+            except ValueError:
+                return "escape rejected"
+            raise RuntimeError("unsafe path was accepted")
+
     try:
         from PySide6.QtCore import Qt, QTimer
         from PySide6.QtWidgets import QApplication
@@ -1485,11 +1551,31 @@ def run_smoke_test():
         from PySide2.QtCore import Qt, QTimer
         from PySide2.QtWidgets import QApplication
         binding = "PySide2"
-    configure_high_dpi(QApplication, Qt, binding)
-    app = QApplication(sys.argv)
-    QTimer.singleShot(0, app.quit)
-    execute = getattr(app, "exec", None) or app.exec_
-    return execute()
+
+    def check_qt_application():
+        configure_high_dpi(QApplication, Qt, binding)
+        app = QApplication.instance() or QApplication(sys.argv)
+        QTimer.singleShot(0, app.quit)
+        execute = getattr(app, "exec", None) or app.exec_
+        exit_code = execute()
+        if exit_code != 0:
+            raise RuntimeError("Qt event loop exited with {}".format(exit_code))
+        return binding
+
+    check("frozen runtime", check_frozen_runtime)
+    check("application directory", check_application_directory)
+    check("manifest codec", check_manifest_codec)
+    check("dependency closure", check_dependency_closure)
+    check("uninstall path safety", check_path_safety)
+    check("Qt application and event loop", check_qt_application)
+    report_path = os.environ.get("UNIVERSAL_INSTALLER_SMOKE_REPORT")
+    report = {"artifact": "uninstaller", "checks": results}
+    if report_path:
+        Path(report_path).write_text(
+            json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    print("SMOKE_TEST_REPORT=" + json.dumps(report, ensure_ascii=False))
+    return 1 if any(item["status"] == "failed" for item in results) else 0
 
 
 def main():
