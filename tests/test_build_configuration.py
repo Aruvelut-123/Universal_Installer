@@ -84,6 +84,8 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("PIP_WHEEL_DIR", linux_script)
         self.assertIn("pip wheel", linux_script)
         self.assertIn("--no-index", linux_script)
+        self.assertIn("make_caches_archivable", linux_script)
+        self.assertIn("chmod -R a+rX", linux_script)
 
         for relative_path in (
             ".github/workflows/build-app.yml",

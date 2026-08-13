@@ -14,6 +14,11 @@ export PIP_WHEEL_DIR=${PIP_WHEEL_DIR:-$PIP_CACHE_ROOT/wheels}
 export PYINSTALLER_WORKPATH=${PYINSTALLER_WORKPATH:-/pyinstaller-work/$target}
 mkdir -p "$PIP_CACHE_DIR" "$PIP_WHEEL_DIR" "$PYINSTALLER_WORKPATH"
 
+make_caches_archivable() {
+  chmod -R a+rX "$PIP_CACHE_ROOT" "$PYINSTALLER_WORKPATH" 2>/dev/null || true
+}
+trap make_caches_archivable EXIT
+
 apt-get update -qq
 apt-get install -y --no-install-recommends \
   binutils build-essential ca-certificates file patchelf \
