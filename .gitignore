@@ -19,6 +19,8 @@ build.py
 *.exe
 *.AppImage
 *.app
+/main.bin
+/uninstall-linux-x86.bin
 __pycache__/
 *.py[cod]
 testaudios/
