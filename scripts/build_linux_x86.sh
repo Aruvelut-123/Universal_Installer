@@ -15,8 +15,8 @@ mkdir -p "$PIP_CACHE_DIR" "$PIP_WHEEL_DIR" "$PYINSTALLER_WORKPATH"
 
 apt-get update -qq
 apt-get install -y --no-install-recommends \
-  binutils ca-certificates file patchelf \
-  python3 python3-pip \
+  binutils build-essential ca-certificates file patchelf \
+  python3 python3-dev python3-pip \
   python3-pyside2.qtcore python3-pyside2.qtgui python3-pyside2.qtwidgets \
   libegl1 libgl1 libopengl0 libxkbcommon0 libxkbcommon-x11-0 \
   libdbus-1-3 libxcb1 libxcb-xinerama0 libxcb-icccm4 libxcb-image0 \
