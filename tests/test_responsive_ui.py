@@ -1,9 +1,11 @@
 import unittest
+from pathlib import Path
 
 from platform_utils import (
     add_wizard_button,
     configure_high_dpi,
     configure_responsive_window,
+    responsive_image_label_class,
 )
 
 
@@ -50,6 +52,71 @@ class FakeWindow:
 
 
 class ResponsiveUiTests(unittest.TestCase):
+    def test_sidebar_label_expands_inside_its_layout(self):
+        source = (Path(__file__).parents[1] / "main.py").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn(
+            "self.left_layout.addWidget(self.character_label, 1)", source
+        )
+        self.assertNotIn(
+            "self.left_layout.setAlignment(Qt.AlignCenter)", source
+        )
+
+    def test_responsive_image_is_set_before_first_resize(self):
+        class Size:
+            def width(self):
+                return 1
+
+            def height(self):
+                return 1
+
+        class Rectangle:
+            def size(self):
+                return Size()
+
+        class Label:
+            def __init__(self):
+                self.pixmap = None
+
+            def setAlignment(self, value):
+                pass
+
+            def setMinimumSize(self, *size):
+                pass
+
+            def setSizePolicy(self, *policy):
+                pass
+
+            def contentsRect(self):
+                return Rectangle()
+
+            def setPixmap(self, pixmap):
+                self.pixmap = pixmap
+
+        class Pixmap:
+            def __init__(self, path):
+                self.path = path
+
+            def isNull(self):
+                return False
+
+        qt = type("Qt", (), {
+            "AlignCenter": 1,
+            "KeepAspectRatio": 2,
+            "FastTransformation": 3,
+        })
+        size_policy = type("SizePolicy", (), {
+            "Expanding": 1,
+            "Ignored": 2,
+        })
+        image_label = responsive_image_label_class(
+            qt, Label, Pixmap, size_policy
+        )("sidebar.png")
+
+        self.assertIs(image_label.pixmap, image_label.source_pixmap)
+
     def test_wizard_button_applies_shared_defaults(self):
         layout = FakeLayout()
         callback = object()

@@ -53,17 +53,27 @@ def responsive_image_label_class(Qt, QLabel, QPixmap, QSizePolicy):
             self.setAlignment(Qt.AlignCenter)
             self.setMinimumSize(1, 1)
             self.setSizePolicy(QSizePolicy.Ignored, vertical_policy)
+            self.update_scaled_pixmap()
 
-        def resizeEvent(self, event):
-            super().resizeEvent(event)
+        def update_scaled_pixmap(self):
+            """Display the source immediately and rescale once laid out."""
             if self.source_pixmap.isNull():
                 return
             available = self.contentsRect().size()
-            if available.width() <= 0 or available.height() <= 0:
+            if available.width() <= 1 or available.height() <= 1:
+                self.setPixmap(self.source_pixmap)
                 return
             self.setPixmap(self.source_pixmap.scaled(
                 available, Qt.KeepAspectRatio, Qt.FastTransformation
             ))
+
+        def resizeEvent(self, event):
+            super().resizeEvent(event)
+            self.update_scaled_pixmap()
+
+        def showEvent(self, event):
+            super().showEvent(event)
+            self.update_scaled_pixmap()
 
     return ResponsiveImageLabel
 

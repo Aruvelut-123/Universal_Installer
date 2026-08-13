@@ -1417,13 +1417,12 @@ class BasePage(QWidget):
             self.left_frame = QFrame()
             self.left_frame.setMinimumWidth(120)
             self.left_layout = QVBoxLayout(self.left_frame)
-            self.left_layout.setAlignment(Qt.AlignCenter)
 
             # 加载卡通图片
             self.character_label = ResponsiveImageLabel(
                 get_installer_metadata()["left_pic"]
             )
-            self.left_layout.addWidget(self.character_label)
+            self.left_layout.addWidget(self.character_label, 1)
 
         # 右侧区域 - 内容区域
         self.right_frame = QFrame()
