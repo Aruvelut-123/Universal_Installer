@@ -49,7 +49,7 @@ smoke_test() {
 }
 
 if [[ "$target" == "installer" ]]; then
-  python3 -m PyInstaller \
+  python3 scripts/run_linux_pyinstaller.py \
     --onefile \
     --windowed \
     --noconfirm \
@@ -57,14 +57,13 @@ if [[ "$target" == "installer" ]]; then
     --workpath "$PYINSTALLER_WORKPATH" \
     --specpath "$PYINSTALLER_WORKPATH" \
     --name main.bin \
-    --hidden-import ipaddress \
     --hidden-import vdf \
     main.py
   chmod +x main.bin
   verify_i386 main.bin
   smoke_test ./main.bin
 else
-  python3 -m PyInstaller \
+  python3 scripts/run_linux_pyinstaller.py \
     --onefile \
     --windowed \
     --noconfirm \
@@ -72,7 +71,6 @@ else
     --workpath "$PYINSTALLER_WORKPATH" \
     --specpath "$PYINSTALLER_WORKPATH" \
     --name uninstall-linux-x86.bin \
-    --hidden-import ipaddress \
     uninstaller.py
   chmod +x uninstall-linux-x86.bin
   verify_i386 uninstall-linux-x86.bin
