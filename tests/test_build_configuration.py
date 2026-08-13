@@ -69,6 +69,10 @@ class BuildConfigurationTests(unittest.TestCase):
             source = (ROOT / entrypoint).read_text(encoding="utf-8")
             self.assertIn('UNIVERSAL_INSTALLER_SMOKE_TEST', source)
             self.assertIn('def run_smoke_test(', source)
+            self.assertIn('"frozen runtime"', source)
+            self.assertIn('"application directory"', source)
+            self.assertIn('"Qt application and event loop"', source)
+            self.assertIn('"checks": results', source)
         self.assertNotIn('AppImage', script)
         self.assertNotIn('nuitka', script.lower())
 
@@ -92,6 +96,17 @@ class BuildConfigurationTests(unittest.TestCase):
             self.assertEqual(workflow.count("Restore macOS PyInstaller cache"), 2)
             self.assertEqual(workflow.count(".pyinstaller-work-linux-x86"), 6)
             self.assertEqual(workflow.count(".pyinstaller-work-macos-x64"), 4)
+            self.assertEqual(
+                workflow.count("Smoke test packaged"), 4
+            )
+            self.assertEqual(
+                workflow.count("Upload installer smoke report"), 3
+            )
+            self.assertEqual(
+                workflow.count("Upload uninstaller smoke report"), 3
+            )
+            self.assertIn("smoke_test_summary:", workflow)
+            self.assertIn("scripts/render_smoke_summary.py", workflow)
             self.assertNotIn("ccache", workflow.lower())
 
     def test_windows_builds_reuse_pyinstaller_cache(self):

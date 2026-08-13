@@ -57,6 +57,23 @@ jobs:
           if ($machine -ne 0x014c) {
             throw "Expected an x86 PE executable, got machine type 0x$($machine.ToString('x4'))"
           }
+      - name: Smoke test packaged installer
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $env:UNIVERSAL_INSTALLER_SMOKE_TEST = "1"
+          $env:UNIVERSAL_INSTALLER_SMOKE_REPORT = "$env:GITHUB_WORKSPACE\smoke-report-windows-installer.json"
+          $process = Start-Process -FilePath ".\dist\main.exe" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            exit $process.ExitCode
+          }
+      - name: Upload installer smoke report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-report-windows-installer
+          path: ./smoke-report-windows-installer.json
+          if-no-files-found: ignore
       - name: Upload binary and signature to Release
         uses: softprops/action-gh-release@v3
         with:
@@ -103,6 +120,23 @@ jobs:
           if ($machine -ne 0x014c) {
             throw "Expected an x86 PE executable, got machine type 0x$($machine.ToString('x4'))"
           }
+      - name: Smoke test packaged uninstaller
+        shell: pwsh
+        run: |
+          $env:QT_QPA_PLATFORM = "offscreen"
+          $env:UNIVERSAL_INSTALLER_SMOKE_TEST = "1"
+          $env:UNIVERSAL_INSTALLER_SMOKE_REPORT = "$env:GITHUB_WORKSPACE\smoke-report-windows-uninstaller.json"
+          $process = Start-Process -FilePath ".\dist\uninstall-windows-x86.exe" -Wait -PassThru
+          if ($process.ExitCode -ne 0) {
+            exit $process.ExitCode
+          }
+      - name: Upload uninstaller smoke report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-report-windows-uninstaller
+          path: ./smoke-report-windows-uninstaller.json
+          if-no-files-found: ignore
       - name: Upload uninstaller to Release
         uses: softprops/action-gh-release@v3
         with:
@@ -137,10 +171,17 @@ jobs:
         run: |
           mkdir -p .pyinstaller-work-linux-x86 .pip-cache-linux-x86
           docker run --rm --platform linux/386 \
-            -e PIP_CACHE_DIR=/pip-cache -e PYINSTALLER_WORKPATH=/pyinstaller-work/installer \
+            -e PIP_CACHE_DIR=/pip-cache -e PYINSTALLER_WORKPATH=/pyinstaller-work/installer -e SMOKE_REPORT_PATH=smoke-report-linux-installer.json \
             -v "$PWD:/work" -v "$PWD/.pyinstaller-work-linux-x86:/pyinstaller-work" -v "$PWD/.pip-cache-linux-x86:/pip-cache" \
             -w /work i386/debian:bullseye \
             bash scripts/build_linux_x86.sh installer
+      - name: Upload installer smoke report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-report-linux-installer
+          path: ./smoke-report-linux-installer.json
+          if-no-files-found: ignore
       - name: Upload installer artifacts to Release
         uses: softprops/action-gh-release@v3
         with:
@@ -175,10 +216,17 @@ jobs:
         run: |
           mkdir -p .pyinstaller-work-linux-x86 .pip-cache-linux-x86
           docker run --rm --platform linux/386 \
-            -e PIP_CACHE_DIR=/pip-cache -e PYINSTALLER_WORKPATH=/pyinstaller-work/uninstaller \
+            -e PIP_CACHE_DIR=/pip-cache -e PYINSTALLER_WORKPATH=/pyinstaller-work/uninstaller -e SMOKE_REPORT_PATH=smoke-report-linux-uninstaller.json \
             -v "$PWD:/work" -v "$PWD/.pyinstaller-work-linux-x86:/pyinstaller-work" -v "$PWD/.pip-cache-linux-x86:/pip-cache" \
             -w /work i386/debian:bullseye \
             bash scripts/build_linux_x86.sh uninstaller
+      - name: Upload uninstaller smoke report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-report-linux-uninstaller
+          path: ./smoke-report-linux-uninstaller.json
+          if-no-files-found: ignore
       - name: Upload uninstaller artifacts to Release
         uses: softprops/action-gh-release@v3
         with:
@@ -275,6 +323,20 @@ jobs:
           
           # 验证签名
           codesign --verify --deep --strict dist/main.app || echo "⚠️  Ad-hoc signing warning (expected)"
+      - name: Smoke test packaged installer
+        env:
+          QT_QPA_PLATFORM: offscreen
+          UNIVERSAL_INSTALLER_SMOKE_TEST: "1"
+          UNIVERSAL_INSTALLER_SMOKE_REPORT: ${{ github.workspace }}/smoke-report-macos-installer.json
+        run: |
+          dist/main.app/Contents/MacOS/main
+      - name: Upload installer smoke report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-report-macos-installer
+          path: ./smoke-report-macos-installer.json
+          if-no-files-found: ignore
       
       - name: Create zip
         run: |
@@ -337,12 +399,51 @@ jobs:
           codesign --force --deep --sign - dist/uninstall-macos.app
           codesign --verify --deep --strict dist/uninstall-macos.app
           ditto -c -k --keepParent dist/uninstall-macos.app uninstall-macos.zip
+      - name: Smoke test packaged uninstaller
+        env:
+          QT_QPA_PLATFORM: offscreen
+          UNIVERSAL_INSTALLER_SMOKE_TEST: "1"
+          UNIVERSAL_INSTALLER_SMOKE_REPORT: ${{ github.workspace }}/smoke-report-macos-uninstaller.json
+        run: |
+          dist/uninstall-macos.app/Contents/MacOS/uninstall-macos
+      - name: Upload uninstaller smoke report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: smoke-report-macos-uninstaller
+          path: ./smoke-report-macos-uninstaller.json
+          if-no-files-found: ignore
       - name: Upload uninstaller to Release
         uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: |
             ./uninstall-macos.zip
+
+  smoke_test_summary:
+    name: Packaged binary smoke test summary
+    if: always()
+    needs:
+      - build_windows
+      - build_windows_uninstaller
+      - build_linux
+      - build_linux_uninstaller
+      - build_macos
+      - build_macos_uninstaller
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+      - name: Download smoke reports
+        continue-on-error: true
+        uses: actions/download-artifact@v8
+        with:
+          pattern: smoke-report-*
+          path: smoke-reports
+          merge-multiple: true
+      - name: Write detailed smoke test table
+        run: python3 scripts/render_smoke_summary.py smoke-reports
   changelog:
     runs-on: ubuntu-latest
     steps:
