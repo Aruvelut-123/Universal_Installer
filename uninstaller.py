@@ -652,7 +652,7 @@ def load_manifest(manifest_path=None):
         if manifest_path
         else resolve_application_directory(
             __file__,
-            frozen=bool(getattr(sys, "frozen", False) or "__compiled__" in globals()),
+            frozen=bool(getattr(sys, "frozen", False)),
         ) / INSTALL_DATA_DIRECTORY / INSTALL_MANIFEST_NAME
     )
     try:
@@ -669,11 +669,6 @@ def load_manifest(manifest_path=None):
 
 
 def _current_uninstaller_container(install_root):
-    appimage = os.environ.get("APPIMAGE")
-    if appimage:
-        appimage_path = Path(appimage).resolve()
-        if _is_relative_to(appimage_path, install_root):
-            return appimage_path
     executable = Path(sys.executable).resolve()
     if not _is_relative_to(executable, install_root):
         return None

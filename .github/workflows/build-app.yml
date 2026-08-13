@@ -121,18 +121,18 @@ jobs:
           path: ./dist/uninstall-windows-x86.exe
 
   build_linux:
-    name: Build for Linux (i686 binary and AppImage)
+    name: Build for Linux (i686 binary)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
-      - name: Restore i686 compiler cache
+      - name: Restore i686 PyInstaller cache
         uses: actions/cache@v6
         with:
-          path: .ccache-linux-x86
-          key: ccache-linux-i686-installer-${{ hashFiles('scripts/build_linux_x86.sh', 'requirements-linux-x86.txt') }}-${{ github.sha }}
+          path: .pyinstaller-work-linux-x86
+          key: pyinstaller-linux-i686-installer-${{ hashFiles('scripts/build_linux_x86.sh', 'requirements-linux-x86.txt') }}-${{ github.sha }}
           restore-keys: |
-            ccache-linux-i686-installer-${{ hashFiles('scripts/build_linux_x86.sh', 'requirements-linux-x86.txt') }}-
-            ccache-linux-i686-installer-
+            pyinstaller-linux-i686-installer-${{ hashFiles('scripts/build_linux_x86.sh', 'requirements-linux-x86.txt') }}-
+            pyinstaller-linux-i686-installer-
       - name: Restore i686 pip cache
         uses: actions/cache@v6
         with:
@@ -141,12 +141,12 @@ jobs:
           restore-keys: |
             pip-linux-i686-${{ hashFiles('requirements-linux-x86.txt') }}-
             pip-linux-i686-
-      - name: Build true 32-bit Linux artifacts
+      - name: Build true 32-bit Linux binary
         run: |
-          mkdir -p .ccache-linux-x86 .pip-cache-linux-x86
+          mkdir -p .pyinstaller-work-linux-x86 .pip-cache-linux-x86
           docker run --rm --platform linux/386 \
-            -e CCACHE_DIR=/ccache -e CCACHE_MAXSIZE=1G -e PIP_CACHE_DIR=/pip-cache \
-            -v "$PWD:/work" -v "$PWD/.ccache-linux-x86:/ccache" -v "$PWD/.pip-cache-linux-x86:/pip-cache" \
+            -e PIP_CACHE_DIR=/pip-cache -e PYINSTALLER_WORKPATH=/pyinstaller-work/installer \
+            -v "$PWD:/work" -v "$PWD/.pyinstaller-work-linux-x86:/pyinstaller-work" -v "$PWD/.pip-cache-linux-x86:/pip-cache" \
             -w /work i386/debian:bullseye \
             bash scripts/build_linux_x86.sh installer
       - name: Upload 32-bit binary
@@ -154,25 +154,19 @@ jobs:
         with:
           name: installer-linux-x86-binary
           path: ./main.bin
-      - name: Upload 32-bit AppImage
-        uses: actions/upload-artifact@v7
-        with:
-          name: installer-linux-x86-AppImage
-          path: ./main.AppImage
-
   build_linux_uninstaller:
     name: Build uninstaller for Linux (i686)
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
-      - name: Restore i686 compiler cache
+      - name: Restore i686 PyInstaller cache
         uses: actions/cache@v6
         with:
-          path: .ccache-linux-x86
-          key: ccache-linux-i686-uninstaller-${{ hashFiles('scripts/build_linux_x86.sh', 'requirements-linux-x86.txt') }}-${{ github.sha }}
+          path: .pyinstaller-work-linux-x86
+          key: pyinstaller-linux-i686-uninstaller-${{ hashFiles('scripts/build_linux_x86.sh', 'requirements-linux-x86.txt') }}-${{ github.sha }}
           restore-keys: |
-            ccache-linux-i686-uninstaller-${{ hashFiles('scripts/build_linux_x86.sh', 'requirements-linux-x86.txt') }}-
-            ccache-linux-i686-uninstaller-
+            pyinstaller-linux-i686-uninstaller-${{ hashFiles('scripts/build_linux_x86.sh', 'requirements-linux-x86.txt') }}-
+            pyinstaller-linux-i686-uninstaller-
       - name: Restore i686 pip cache
         uses: actions/cache@v6
         with:
@@ -181,12 +175,12 @@ jobs:
           restore-keys: |
             pip-linux-i686-${{ hashFiles('requirements-linux-x86.txt') }}-
             pip-linux-i686-
-      - name: Build true 32-bit Linux uninstaller artifacts
+      - name: Build true 32-bit Linux uninstaller
         run: |
-          mkdir -p .ccache-linux-x86 .pip-cache-linux-x86
+          mkdir -p .pyinstaller-work-linux-x86 .pip-cache-linux-x86
           docker run --rm --platform linux/386 \
-            -e CCACHE_DIR=/ccache -e CCACHE_MAXSIZE=1G -e PIP_CACHE_DIR=/pip-cache \
-            -v "$PWD:/work" -v "$PWD/.ccache-linux-x86:/ccache" -v "$PWD/.pip-cache-linux-x86:/pip-cache" \
+            -e PIP_CACHE_DIR=/pip-cache -e PYINSTALLER_WORKPATH=/pyinstaller-work/uninstaller \
+            -v "$PWD:/work" -v "$PWD/.pyinstaller-work-linux-x86:/pyinstaller-work" -v "$PWD/.pip-cache-linux-x86:/pip-cache" \
             -w /work i386/debian:bullseye \
             bash scripts/build_linux_x86.sh uninstaller
       - name: Upload 32-bit uninstaller binary
@@ -194,12 +188,6 @@ jobs:
         with:
           name: uninstaller-linux-x86-binary
           path: ./uninstall-linux-x86.bin
-      - name: Upload 32-bit uninstaller AppImage
-        uses: actions/upload-artifact@v7
-        with:
-          name: uninstaller-linux-x86-AppImage
-          path: ./uninstall-linux-x86.AppImage
-
   build_macos:
     name: Build for macOS (x86_64 - runs on both Intel & Apple Silicon)
     runs-on: macos-26-intel

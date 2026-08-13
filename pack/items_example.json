@@ -5,8 +5,8 @@
             "installed_executable": "uninstall-windows-x86.exe"
         },
         "linux": {
-            "source_file": "pack/uninstall-linux-x86.AppImage",
-            "installed_executable": "uninstall-linux-x86.AppImage"
+            "source_file": "pack/uninstall-linux-x86.bin",
+            "installed_executable": "uninstall-linux-x86.bin"
         },
         "darwin": {
             "source_file": "pack/uninstall-macos.zip",
@@ -73,10 +73,10 @@
                 "pack/uninstall-windows-x86.exe"
             ],
             "linux_x86_files": [
-                "pack/uninstall-linux-x86.AppImage"
+                "pack/uninstall-linux-x86.bin"
             ],
             "linux_x64_files": [
-                "pack/uninstall-linux-x86.AppImage"
+                "pack/uninstall-linux-x86.bin"
             ],
             "macos_files": [
                 "pack/uninstall-macos.zip"
@@ -88,7 +88,7 @@
                 "pack/application-core.zip": "{install_path}",
                 "pack/readme.txt": "{install_path}",
                 "pack/uninstall-windows-x86.exe": "{install_path}",
-                "pack/uninstall-linux-x86.AppImage": "{install_path}",
+                "pack/uninstall-linux-x86.bin": "{install_path}",
                 "pack/uninstall-macos.zip": "{install_path}"
             }
         },
