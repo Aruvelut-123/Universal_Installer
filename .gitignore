@@ -26,3 +26,5 @@ __pycache__/
 *.py[cod]
 testaudios/
 logs/
+items_gb.json
+check_updates.py

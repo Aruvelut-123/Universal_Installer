@@ -324,6 +324,7 @@ COMPONENT_METADATA_ALIASES = {
     "default_install_path": "default_path",
     "default_linux_install_path": "default_path_linux",
     "default_macos_install_path": "default_path_macos",
+    "core_file": "core_file",
 }
 
 
@@ -1145,8 +1146,14 @@ class InstallThread(QThread):
                 target = target_directory / filename
                 self.recorder.install_file(source, target)
 
-    def _extract_archive(self, archive_name, archive_type, in_path):
-        """Safely extract to a temporary tree, then transactionally merge it."""
+    def _extract_archive(self, archive_name, archive_type, in_path, skip_files=None):
+        """Safely extract to a temporary tree, then transactionally merge it.
+
+        *skip_files* is a set of relative paths (forward-slash, no leading slash)
+        that should be omitted during extraction.  For zip archives the entries
+        are filtered out before extraction; for other formats the files are
+        deleted after extraction.
+        """
         with tempfile.TemporaryDirectory(prefix="universal-installer-") as temporary:
             extract_path = Path(temporary)
             if archive_type == 'zip':
@@ -1158,7 +1165,12 @@ class InstallThread(QThread):
                     for info in infos:
                         if stat.S_ISLNK(info.external_attr >> 16):
                             raise ValueError(f"ZIP 压缩包包含符号链接: {info.filename}")
-                    archive.extractall(str(extract_path))
+                    if skip_files:
+                        infos = [
+                            info for info in infos
+                            if info.filename.replace("\\", "/") not in skip_files
+                        ]
+                    archive.extractall(str(extract_path), members=infos)
                     for info in infos:
                         mode = info.external_attr >> 16
                         if not info.is_dir() and mode & 0o111:
@@ -1214,9 +1226,15 @@ class InstallThread(QThread):
                     shutil.copyfileobj(source, target)
             else:
                 raise ValueError(f"未知的压缩类型: {archive_type}")
+            # 非 zip 格式无法在解压时过滤，解压后删除需要跳过的文件
+            if skip_files:
+                for rel in skip_files:
+                    target = extract_path / rel.replace("/", os.sep)
+                    if target.is_file():
+                        target.unlink()
             self._install_extracted_tree(extract_path, in_path)
 
-    def _handle_file(self, file, item, is_platform_file=False):
+    def _handle_file(self, file, item, is_platform_file=False, skip_files=None):
         """统一处理单个文件"""
         print(f"[DEBUG] 处理文件: {file}, is_platform_file={is_platform_file}")
         
@@ -1237,16 +1255,16 @@ class InstallThread(QThread):
             return
 
         print(f"[DEBUG] 调用run_extract: archive={file_path}, type={file_type}, in_path={in_path}")
-        self.run_extract(file_path, file_type, in_path)
+        self.run_extract(file_path, file_type, in_path, skip_files=skip_files)
 
-    def _process_files(self, files, item):
+    def _process_files(self, files, item, skip_files=None):
         """处理文件列表"""
         if not files:
             return
-        
+
         print(f"[DEBUG] 处理文件列表: {files}")
         for file in files:
-            self._handle_file(file, item)
+            self._handle_file(file, item, skip_files=skip_files)
 
     def _process_component(self, component):
         """处理单个组件"""
@@ -1254,9 +1272,15 @@ class InstallThread(QThread):
         item = self.items_by_id.get(component)
         if item is None:
             raise KeyError(f"组件不存在: {component}")
+        # 当核心组件未被勾选时，跳过其它组件中声明的 core_file
+        skip_files: set[str] | None = None
+        if not self._core_selected:
+            core_file = item.get("core_file")
+            if core_file:
+                skip_files = {core_file.replace("\\", "/")}
         files = get_component_files(item)
         print(f"[DEBUG] 组件 {component} 文件列表: {files}")
-        self._process_files(files, item)
+        self._process_files(files, item, skip_files=skip_files)
 
     def run(self):
         print("[DEBUG] run()方法开始执行")
@@ -1277,6 +1301,8 @@ class InstallThread(QThread):
             # 2. 安装组件
             selected_components = self._resolve_install_order()
             total_components = len(selected_components)
+            core_id = get_core_component()["id"]
+            self._core_selected = core_id in self.components and self.components[core_id]
             if total_components == 0:
                 raise ValueError("没有可安装的组件")
             uninstaller_configuration = get_uninstaller_configuration()
@@ -1346,9 +1372,9 @@ class InstallThread(QThread):
             print(f"[DEBUG] run()方法结束，success={self.success}")
             self.finished.emit(self.success)
 
-    def run_extract(self, archive_name, archive_type, in_path):
+    def run_extract(self, archive_name, archive_type, in_path, skip_files=None):
         print(f"[DEBUG] run_extract开始: archive_name={archive_name}, archive_type={archive_type}, in_path={in_path}")
-        
+
         # 调用方可传相对或绝对路径；只规范化一次，避免重复拼接盘符。
         archive_name = os.path.abspath(
             archive_name.replace("\\", os.sep).replace("/", os.sep)
@@ -1364,14 +1390,14 @@ class InstallThread(QThread):
         if not os.path.exists(in_path):
             print(f"[DEBUG] 目标目录不存在，创建: {in_path}")
         self.recorder.prepare_directory(in_path)
-        
+
         self.progress_updated.emit(0, f"正在解压文件{archive_name}到{in_path}")
-        
+
         try:
             print(f"[DEBUG] 开始解压，类型: {archive_type}")
-            
+
             print(f"[DEBUG] 使用解压器: {archive_type}")
-            self._extract_archive(archive_name, archive_type, in_path)
+            self._extract_archive(archive_name, archive_type, in_path, skip_files=skip_files)
             print(f"[DEBUG] 解压完成: {archive_name}")
             
             print(f"[DEBUG] 解压成功: {archive_name} -> {in_path}")
