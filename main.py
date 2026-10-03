@@ -42,7 +42,7 @@ from uninstaller import (
     INSTALL_MANIFEST_NAME,
     InstallRecorder,
     installed_component_versions,
-    load_manifest,
+    load_existing_installation,
     register_windows_uninstaller,
     remove_windows_uninstall_entry,
 )
@@ -1669,6 +1669,7 @@ class ComponentsPage(BasePage):
         self.default_states_by_id = {}
         self.installed_versions = {}
         self.loaded_install_root = None
+        self.installation_notice = None
         self.archive_size_cache = {}
         self.has_missing_required_files = False
         self.size_calculation_enabled = False
@@ -1923,23 +1924,34 @@ class ComponentsPage(BasePage):
         self.description_text.setHtml(description)
 
     def load_installation_state(self, install_root):
-        """Restore selections and versions recorded in the chosen game folder."""
+        """Restore selections and versions recorded in the chosen game folder.
+
+        A record that is damaged, was moved together with the game folder, or
+        was deleted by hand never blocks the wizard: the page falls back to the
+        default selection and reports what happened through the returned
+        notice instead of raising.
+        """
         root = Path(install_root).resolve()
         if root == self.loaded_install_root:
-            return bool(self.installed_versions)
+            return bool(self.installed_versions), self.installation_notice
 
-        manifest_path = (
-            root / INSTALL_DATA_DIRECTORY / INSTALL_MANIFEST_NAME
-        )
-        manifest = None
-        if manifest_path.is_file():
-            _, manifest = load_manifest(manifest_path)
-        installed_versions = (
-            installed_component_versions(manifest) if manifest else {}
-        )
+        try:
+            manifest, notice = load_existing_installation(
+                root / INSTALL_DATA_DIRECTORY / INSTALL_MANIFEST_NAME,
+                root,
+            )
+            installed_versions = (
+                installed_component_versions(manifest) if manifest else {}
+            )
+        except Exception as error:
+            # Unreadable records live in the game folder, so no unexpected
+            # failure while reading them may stop the wizard.
+            manifest, installed_versions = None, {}
+            notice = f"游戏目录中的安装信息无法读取，已忽略该安装信息：{error}"
 
         self.loaded_install_root = root
         self.installed_versions = installed_versions
+        self.installation_notice = notice
         with blocked_signals(self.components_list):
             for component_id, tree_item in self.tree_items_by_id.items():
                 item = self.items_by_id[component_id]
@@ -1975,7 +1987,7 @@ class ComponentsPage(BasePage):
                 tree_item.setText(0, label)
 
         self.synchronize_selection()
-        return manifest is not None
+        return manifest is not None, notice
 
     def on_item_clicked(self, item, column):
         # 如果点击的是父项目，更新子项目的选择状态
@@ -2399,18 +2411,18 @@ class DirectoryPage(BasePage):
             return
 
         self.parent.install_path = str(Path(path).resolve())
-        try:
-            installed = self.parent.pages["components"].load_installation_state(
-                self.parent.install_path
-            )
-        except (OSError, RuntimeError, ValueError) as error:
-            QMessageBox.warning(
+        installed, notice = self.parent.pages["components"].load_installation_state(
+            self.parent.install_path
+        )
+        if notice:
+            # Damaged or relocated records are reported without stopping the
+            # wizard: the user can always reinstall over them.
+            QMessageBox.information(
                 self,
-                "安装信息无效",
-                f"无法读取该游戏目录中的现有安装信息：\n\n{error}",
+                "安装信息提示",
+                f"{notice}\n\n将继续安装，并在完成后按当前目录重新写入安装信息。",
             )
-            return
-        if installed:
+        elif installed:
             QMessageBox.information(
                 self,
                 "检测到现有安装",

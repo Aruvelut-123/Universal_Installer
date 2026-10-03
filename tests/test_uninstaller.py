@@ -361,5 +361,161 @@ class ManifestRecordingTests(unittest.TestCase):
             self.assertEqual(manifest["files"][0]["sha256"], uninstaller._file_digest(source))
 
 
+class ExistingInstallationRecoveryTests(unittest.TestCase):
+    """Damaged or relocated records must never block a fresh installation."""
+
+    def _manifest_path(self, root):
+        return (
+            root / uninstaller.INSTALL_DATA_DIRECTORY
+            / uninstaller.INSTALL_MANIFEST_NAME
+        )
+
+    def _write_record(self, root, manifest):
+        path = self._manifest_path(root)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(uninstaller._encode_manifest(manifest))
+        return path
+
+    def _record(self, install_root, component_id="mod"):
+        return {
+            "schema_version": 2,
+            "program_name": "Test",
+            "install_root": str(install_root),
+            "selected_components": [component_id],
+            "components": [
+                {
+                    "id": component_id, "name": "Mod", "version": "1.0",
+                    "dependencies": [], "required": False,
+                },
+            ],
+            "files": [],
+        }
+
+    def test_damaged_record_is_reported_instead_of_raised(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = self._manifest_path(root)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"UIM\x01not-a-zlib-stream")
+
+            manifest, notice = uninstaller.load_existing_installation(path, root)
+
+            self.assertIsNone(manifest)
+            self.assertIn("已损坏", notice)
+
+    def test_truncated_record_is_reported_instead_of_raised(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = self._write_record(root, self._record(root))
+            path.write_bytes(path.read_bytes()[:-4])
+
+            manifest, notice = uninstaller.load_existing_installation(path, root)
+
+            self.assertIsNone(manifest)
+            self.assertIsNotNone(notice)
+
+    def test_missing_record_is_silent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            manifest, notice = uninstaller.load_existing_installation(
+                self._manifest_path(root), root
+            )
+
+            self.assertIsNone(manifest)
+            self.assertIsNone(notice)
+
+    def test_matching_record_is_used_silently(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            path = self._write_record(root, self._record(root))
+
+            manifest, notice = uninstaller.load_existing_installation(path, root)
+
+            self.assertIsNone(notice)
+            self.assertEqual(
+                uninstaller.installed_component_versions(manifest), {"mod": "1.0"}
+            )
+
+    def test_relocated_record_keeps_components_with_a_notice(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            old_root = workspace / "old"
+            old_root.mkdir()
+            new_root = workspace / "new"
+            new_root.mkdir()
+            source = self._write_record(old_root, self._record(old_root))
+            target = self._manifest_path(new_root)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(source.read_bytes())
+
+            manifest, notice = uninstaller.load_existing_installation(
+                target, new_root
+            )
+
+            self.assertIsNotNone(manifest)
+            self.assertIn("不一致", notice)
+            self.assertEqual(
+                uninstaller.installed_component_versions(manifest), {"mod": "1.0"}
+            )
+
+    def test_load_manifest_still_rejects_a_relocated_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            new_root = workspace / "new"
+            new_root.mkdir()
+            path = self._write_record(new_root, self._record(workspace / "old"))
+
+            with self.assertRaises(ValueError):
+                uninstaller.load_manifest(path)
+
+    def test_manifest_components_tolerate_malformed_fields(self):
+        manifest = {
+            "selected_components": 5,
+            "components": [
+                {"id": "core", "dependencies": 3, "remove_directories_on_uninstall": "x"},
+                {"id": 4},
+                "not-a-record",
+            ],
+        }
+
+        self.assertEqual(
+            uninstaller.installed_component_versions(manifest), {"core": None}
+        )
+        self.assertEqual(
+            uninstaller.installed_component_versions({"selected_components": "core"}),
+            {},
+        )
+
+    def test_recorder_recovers_from_a_damaged_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            damaged = self._manifest_path(root)
+            damaged.parent.mkdir(parents=True, exist_ok=True)
+            damaged.write_bytes(b"UIM\x01damaged-payload")
+            metadata = {
+                "program_name": "Test", "version": "2", "author": "Author"
+            }
+
+            recorder = uninstaller.InstallRecorder(
+                root, metadata,
+                [{"id": "core", "name": "Core", "version": "1.0"}],
+                {}, core_component="core",
+            )
+            recorder.begin_component("core")
+            target = root / "core.dll"
+            recorder.prepare_file(target)
+            target.write_bytes(b"installed")
+            recorder.finalize()
+
+            _, manifest = uninstaller.load_manifest(recorder.manifest_path)
+            self.assertEqual(manifest["schema_version"], 2)
+            quarantined = list(
+                damaged.parent.glob(damaged.name + ".damaged-*")
+            )
+            self.assertEqual(len(quarantined), 1)
+            self.assertEqual(quarantined[0].read_bytes(), b"UIM\x01damaged-payload")
+
+
 if __name__ == "__main__":
     unittest.main()

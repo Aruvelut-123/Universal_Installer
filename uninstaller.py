@@ -53,12 +53,17 @@ def _decode_manifest(data):
     if not data.startswith(MANIFEST_MAGIC):
         raise ValueError("安装信息不是受支持的 UIM 格式")
     decompressor = zlib.decompressobj()
-    payload = decompressor.decompress(
-        data[len(MANIFEST_MAGIC):], MAX_MANIFEST_SIZE + 1
-    )
-    if len(payload) > MAX_MANIFEST_SIZE or decompressor.unconsumed_tail:
-        raise ValueError("安装信息解压后超过大小限制")
-    payload += decompressor.flush()
+    try:
+        payload = decompressor.decompress(
+            data[len(MANIFEST_MAGIC):], MAX_MANIFEST_SIZE + 1
+        )
+        if len(payload) > MAX_MANIFEST_SIZE or decompressor.unconsumed_tail:
+            raise ValueError("安装信息解压后超过大小限制")
+        payload += decompressor.flush()
+    except zlib.error as error:
+        # zlib.error is not a ValueError, so damaged records must be
+        # translated here to stay catchable by the record readers.
+        raise ValueError("安装信息压缩数据无效: {}".format(error)) from error
     if len(payload) > MAX_MANIFEST_SIZE or not decompressor.eof:
         raise ValueError("安装信息压缩数据无效")
     try:
@@ -88,6 +93,13 @@ def _file_digest(path):
     return digest.hexdigest()
 
 
+def _string_list(value):
+    """Return only the strings of a recorded list, tolerating junk values."""
+    if isinstance(value, str) or not isinstance(value, (list, tuple)):
+        return []
+    return [item for item in value if isinstance(item, str)]
+
+
 def _manifest_components(manifest):
     """Return normalized component records, including legacy manifests."""
     if not isinstance(manifest, dict):
@@ -102,16 +114,11 @@ def _manifest_components(manifest):
                 "id": record["id"],
                 "name": record.get("name", record["id"]),
                 "version": record.get("version"),
-                "dependencies": [
-                    value for value in record.get("dependencies", [])
-                    if isinstance(value, str)
-                ],
+                "dependencies": _string_list(record.get("dependencies")),
                 "required": bool(record.get("required", False)),
-                "remove_directories_on_uninstall": [
-                    value for value in record.get(
-                        "remove_directories_on_uninstall", []
-                    ) if isinstance(value, str)
-                ],
+                "remove_directories_on_uninstall": _string_list(
+                    record.get("remove_directories_on_uninstall")
+                ),
             })
         if normalized:
             return normalized
@@ -123,8 +130,7 @@ def _manifest_components(manifest):
             "required": False,
             "remove_directories_on_uninstall": [],
         }
-        for component_id in manifest.get("selected_components", [])
-        if isinstance(component_id, str)
+        for component_id in _string_list(manifest.get("selected_components"))
     ]
 
 
@@ -314,12 +320,31 @@ class InstallRecorder:
         if not self.manifest_path.is_file():
             return {}
         try:
-            data = _decode_manifest(self.manifest_path.read_bytes())
-        except (OSError, ValueError) as error:
-            raise RuntimeError("无法读取已有安装信息: {}".format(error)) from error
-        if not isinstance(data, dict):
-            raise ValueError("已有安装信息格式无效")
-        return data
+            data = self.manifest_path.read_bytes()
+        except OSError:
+            return {}
+        try:
+            manifest = _decode_manifest(data)
+        except ValueError:
+            # A damaged record must not block a reinstall: keep it aside for
+            # inspection and start a fresh one.
+            self._quarantine_manifest()
+            return {}
+        if not isinstance(manifest, dict):
+            self._quarantine_manifest()
+            return {}
+        return manifest
+
+    def _quarantine_manifest(self):
+        """Move an unreadable record aside instead of overwriting it."""
+        stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+        target = self.manifest_path.with_name(
+            "{}.damaged-{}".format(self.manifest_path.name, stamp)
+        )
+        try:
+            os.replace(str(self.manifest_path), str(target))
+        except OSError:
+            pass
 
     def _relative_path(self, path):
         path = Path(path).resolve()
@@ -647,22 +672,89 @@ def remove_windows_uninstall_entry(registry=None):
             _delete_windows_registry_paths(hive, paths, winreg.KEY_WRITE | view)
 
 
-def load_manifest(manifest_path=None):
-    path = (
-        Path(manifest_path).resolve()
-        if manifest_path
-        else resolve_application_directory(
-            __file__,
-            frozen=bool(getattr(sys, "frozen", False)),
-        ) / INSTALL_DATA_DIRECTORY / INSTALL_MANIFEST_NAME
-    )
+def read_installation_record(manifest_path):
+    """Read an installation record without validating its recorded location.
+
+    Callers that only need the recorded components, and that must never be
+    blocked by a damaged or relocated record, use this helper and decide for
+    themselves how strict the location check has to be.
+    """
+    path = Path(manifest_path).resolve()
     try:
         manifest = _decode_manifest(path.read_bytes())
     except (OSError, ValueError) as error:
         raise RuntimeError("无法读取安装信息 {}: {}".format(path, error)) from error
     if not isinstance(manifest, dict) or manifest.get("schema_version") not in (1, 2):
         raise ValueError("安装信息格式不受支持")
-    install_root = Path(manifest.get("install_root", "")).resolve()
+    return path, manifest
+
+
+def _same_location(first, second):
+    """Compare two paths, ignoring case and separator differences."""
+    first = Path(first)
+    second = Path(second)
+    if first == second:
+        return True
+    return os.path.normcase(str(first)) == os.path.normcase(str(second))
+
+
+def _recorded_manifest_path(manifest):
+    """Return where a record claims to live, or ``None`` when unrecorded."""
+    recorded = manifest.get("install_root")
+    if not isinstance(recorded, str) or not recorded.strip():
+        return None
+    try:
+        return (
+            Path(recorded).resolve() / INSTALL_DATA_DIRECTORY / INSTALL_MANIFEST_NAME
+        )
+    except OSError:
+        return None
+
+
+def load_existing_installation(manifest_path, install_root):
+    """Read the record kept in *install_root*, tolerating damaged records.
+
+    Returns ``(manifest, notice)``. A record that is damaged, unsupported, or
+    recorded against another location must never stop a user from installing
+    again, so this helper reports the problem instead of raising. ``manifest``
+    is ``None`` only when nothing usable could be recovered, and ``notice``
+    describes why the record was ignored or reused leniently; it is ``None``
+    for a record that still lives where it says it does.
+    """
+    path = Path(manifest_path)
+    if not path.is_file():
+        return None, None
+
+    try:
+        resolved_path, manifest = read_installation_record(path)
+    except (OSError, RuntimeError, ValueError) as error:
+        return None, "游戏目录中的安装信息已损坏或无法读取，已忽略该安装信息：{}".format(
+            error
+        )
+
+    recorded_path = _recorded_manifest_path(manifest)
+    if recorded_path is None or not _same_location(resolved_path, recorded_path):
+        return manifest, (
+            "安装信息记录的位置（{}）与当前安装目录（{}）不一致，"
+            "已忽略其中的位置信息，但仍沿用其组件记录。".format(
+                manifest.get("install_root") or "未知",
+                Path(install_root).resolve(),
+            )
+        )
+    return manifest, None
+
+
+def load_manifest(manifest_path=None):
+    path = (
+        resolve_application_directory(
+            __file__,
+            frozen=bool(getattr(sys, "frozen", False)),
+        ) / INSTALL_DATA_DIRECTORY / INSTALL_MANIFEST_NAME
+        if manifest_path is None
+        else manifest_path
+    )
+    path, manifest = read_installation_record(path)
+    install_root = Path(str(manifest.get("install_root") or "")).resolve()
     expected_path = install_root / INSTALL_DATA_DIRECTORY / INSTALL_MANIFEST_NAME
     if path != expected_path:
         raise ValueError("安装信息路径与安装目录不匹配")
