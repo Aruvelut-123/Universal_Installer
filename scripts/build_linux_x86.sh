@@ -19,6 +19,23 @@ make_caches_archivable() {
 }
 trap make_caches_archivable EXIT
 
+# Debian bullseye is the last release shipping the 32-bit PySide2 packages this
+# build needs, and bullseye has left security support. The live mirror still
+# advertises bullseye-security while its pool files are gone, so apt resolves
+# versions it can no longer download and the build dies with 404s. Install the
+# archived suite instead and accept its expired Release file: the container only
+# builds a binary and is discarded afterwards.
+DEBIAN_ARCHIVE=${DEBIAN_ARCHIVE:-http://archive.debian.org/debian}
+
+configure_apt_sources() {
+  rm -rf /var/lib/apt/lists/*
+  rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources
+  printf 'deb %s bullseye main\n' "$DEBIAN_ARCHIVE" > /etc/apt/sources.list
+  printf 'Acquire::Check-Valid-Until "false";\n' \
+    > /etc/apt/apt.conf.d/99debian-archive
+}
+configure_apt_sources
+
 apt-get update -qq
 apt-get install -y --no-install-recommends \
   binutils build-essential ca-certificates file patchelf \
