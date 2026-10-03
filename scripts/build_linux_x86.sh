@@ -20,31 +20,72 @@ make_caches_archivable() {
 trap make_caches_archivable EXIT
 
 # Debian bullseye is the last release shipping the 32-bit PySide2 packages this
-# build needs, and bullseye has left security support. The live mirror still
-# advertises bullseye-security while its pool files are gone, so apt resolves
-# versions it can no longer download and the build dies with 404s. Install the
-# archived suite instead and accept its expired Release file: the container only
-# builds a binary and is discarded afterwards.
-DEBIAN_ARCHIVE=${DEBIAN_ARCHIVE:-http://archive.debian.org/debian}
+# build needs, and bullseye has left security support. Its live suites are no
+# longer installable: the mirror still advertises bullseye-security while its
+# pool files are gone, and the plain archive only carries the older point
+# releases, which the security versions preinstalled in this image cannot be
+# completed from. The image records the dated snapshots it was built from, and
+# those still serve every version the image and the build need, so install from
+# them; set DEBIAN_SNAPSHOT/DEBIAN_SNAPSHOT_STAMP to override, which also
+# serves as the fallback for images without that record.
+SNAPSHOT_BASE_DEFAULT=http://snapshot.debian.org/archive
+SNAPSHOT_STAMP_DEFAULT=20260824T000000Z
 
 configure_apt_sources() {
+  local recorded="" base stamp
+  base=${DEBIAN_SNAPSHOT:-$SNAPSHOT_BASE_DEFAULT}
+  stamp=${DEBIAN_SNAPSHOT_STAMP:-$SNAPSHOT_STAMP_DEFAULT}
+  mkdir -p /etc/apt/sources.list.d /etc/apt/apt.conf.d
   rm -rf /var/lib/apt/lists/*
   rm -f /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources
-  printf 'deb %s bullseye main\n' "$DEBIAN_ARCHIVE" > /etc/apt/sources.list
-  printf 'Acquire::Check-Valid-Until "false";\n' \
-    > /etc/apt/apt.conf.d/99debian-archive
+  if [[ -z "${DEBIAN_SNAPSHOT:-}${DEBIAN_SNAPSHOT_STAMP:-}" ]]; then
+    recorded=$(sed -n \
+      's|^# \(deb http://snapshot\.debian\.org/archive/[^ ]* [a-z-]* main\)$|\1|p' \
+      /etc/apt/sources.list)
+  fi
+  if [[ -n "$recorded" ]]; then
+    printf '%s\n' "$recorded" > /etc/apt/sources.list
+  else
+    cat > /etc/apt/sources.list <<CONF
+deb $base/debian/$stamp bullseye main
+deb $base/debian/$stamp bullseye-updates main
+deb $base/debian-security/$stamp bullseye-security main
+CONF
+  fi
+  # Snapshot Release files are expired by design, and their host occasionally
+  # answers slowly, so relax the date check and retry transient failures.
+  printf 'Acquire::Check-Valid-Until "false";\nAcquire::Retries "3";\n' \
+    > /etc/apt/apt.conf.d/99debian-snapshot
 }
 configure_apt_sources
 
-apt-get update -qq
-apt-get install -y --no-install-recommends \
-  binutils build-essential ca-certificates file patchelf \
-  python3 python3-dev python3-pip \
-  python3-pyside2.qtcore python3-pyside2.qtgui python3-pyside2.qtwidgets \
-  libegl1 libgl1 libopengl0 libxkbcommon0 libxkbcommon-x11-0 \
-  libdbus-1-3 libxcb1 libxcb-xinerama0 libxcb-icccm4 libxcb-image0 \
-  libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 \
+BUILD_PACKAGES=(
+  binutils build-essential ca-certificates file patchelf
+  python3 python3-dev python3-pip
+  python3-pyside2.qtcore python3-pyside2.qtgui python3-pyside2.qtwidgets
+  libegl1 libgl1 libopengl0 libxkbcommon0 libxkbcommon-x11-0
+  libdbus-1-3 libxcb1 libxcb-xinerama0 libxcb-icccm4 libxcb-image0
+  libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0
   libxcb-xfixes0 libxcb-xkb1
+)
+
+# The snapshot host also answers with occasional transient 5xx responses, and
+# apt keeps its partial downloads, so retry whole transactions rather than
+# failing the build on the first hiccup.
+apt_retry() {
+  local attempt
+  for attempt in 1 2 3; do
+    if "$@"; then
+      return 0
+    fi
+    echo "apt command failed (attempt $attempt): $*" >&2
+    sleep 10
+  done
+  return 1
+}
+
+apt_retry apt-get update -qq
+apt_retry apt-get install -y --no-install-recommends "${BUILD_PACKAGES[@]}"
 
 python3 -m pip wheel \
   --find-links "$PIP_WHEEL_DIR" \
