@@ -238,6 +238,66 @@ class ComponentUninstallTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 uninstaller._resolve_uninstall_directory(root, "{install_path}")
 
+    def test_uninstall_rejects_manifest_paths_in_private_data(self):
+        temporary, root, manifest_path, manifest = self.make_installation()
+        self.addCleanup(temporary.cleanup)
+        manifest["files"] = [{
+            "path": uninstaller.INSTALL_DATA_DIRECTORY + "/" +
+                    uninstaller.INSTALL_MANIFEST_NAME,
+            "backup": None,
+            "components": ["core"],
+        }]
+        uninstaller._atomic_write_manifest(manifest_path, manifest)
+
+        errors, _ = uninstaller.uninstall(manifest_path, manifest, {"core"})
+
+        self.assertTrue(errors)
+        self.assertTrue(manifest_path.is_file())
+
+    def test_uninstall_rejects_manifest_paths_through_external_symlink(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            root = workspace / "install"
+            outside = workspace / "outside"
+            root.mkdir()
+            outside.mkdir()
+            link = root / "link"
+            try:
+                link.symlink_to(outside, target_is_directory=True)
+            except (OSError, NotImplementedError):
+                self.skipTest("symbolic links are unavailable")
+            victim = outside / "victim.dll"
+            victim.write_bytes(b"keep me")
+            manifest = {
+                "schema_version": 2,
+                "install_root": str(root),
+                "components": [{"id": "core", "name": "Core"}],
+                "core_component": "core",
+                "files": [{
+                    "path": "link/victim.dll",
+                    "backup": None,
+                    "components": ["core"],
+                }],
+                "created_directories": [],
+            }
+            manifest_path = (
+                root / uninstaller.INSTALL_DATA_DIRECTORY /
+                uninstaller.INSTALL_MANIFEST_NAME
+            )
+            uninstaller._atomic_write_manifest(manifest_path, manifest)
+
+            errors, _ = uninstaller.uninstall(manifest_path, manifest, {"core"})
+
+            self.assertTrue(errors)
+            self.assertTrue(victim.is_file())
+
+    def test_uninstaller_cleanup_is_idempotent_for_missing_file(self):
+        with tempfile.TemporaryDirectory() as directory, mock.patch.object(
+            uninstaller.platform, "system", return_value="Linux"
+        ):
+            target = Path(directory) / "already-removed.bin"
+            uninstaller.remove_running_uninstaller(target)
+
     def test_uninstaller_ui_assets_cannot_escape_private_data(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -316,6 +376,34 @@ class ManifestRecordingTests(unittest.TestCase):
             self.assertEqual(manifest["uninstaller_ui"], stored)
             for relative in stored["assets"].values():
                 self.assertTrue((recorder.data_directory / relative).is_file())
+
+    def test_install_file_skips_destination_hash_when_sizes_differ(self):
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            root = workspace / "install"
+            root.mkdir()
+            source = workspace / "payload.dll"
+            source.write_bytes(b"new payload")
+            target = root / "payload.dll"
+            target.write_bytes(b"an older and longer payload")
+            recorder = uninstaller.InstallRecorder(
+                root,
+                {"program_name": "Test", "version": "1", "author": "Author"},
+                [{"id": "core", "name": "Core"}],
+                {},
+                core_component="core",
+            )
+            recorder.begin_component("core")
+            real_digest = uninstaller._file_digest
+            with mock.patch.object(
+                uninstaller,
+                "_file_digest",
+                side_effect=lambda path: real_digest(path),
+            ) as digest:
+                self.assertTrue(recorder.install_file(source, target))
+
+            self.assertEqual(digest.call_count, 1)
+            self.assertEqual(target.read_bytes(), source.read_bytes())
 
     def test_update_skips_identical_files_and_removes_stale_files(self):
         with tempfile.TemporaryDirectory() as directory:

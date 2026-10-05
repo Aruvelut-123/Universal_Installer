@@ -64,7 +64,7 @@ Windows 安装器虽然是 x86 程序，但会检测操作系统的原生架构�
 
 首次使用或复用本项目时，将两个示例文件复制为 `metadata.json` 和 `pack/items.json`，再替换示例值。这两个生产配置和 `build.py` 仅保存在本地，不会提交到 Git。
 
-`pack/items.json` 顶层使用 `components`。每个组件必须具有唯一的 `component_id`；`dependencies` 中的每个值都必须引用已存在的组件 ID。含文件的组件必须提供非空 `version`，只用于分组且没有文件的组件可省略版本。`common_files` 和平台文件列表里的每个文件也必须在 `destinations` 中配置目标路径。
+`pack/items.json` 顶层使用 `components`。每个组件必须具有唯一的 `component_id`；`dependencies` 中的每个值都必须引用已存在的组件 ID。含文件的组件必须提供非空 `version`，只用于分组且没有文件的组件可省略版本。`common_files` 和平台文件列表里的每个文件也必须在 `destinations` 中配置目标路径。组件还可使用可选的 `incompatible` 字符串数组（兼容旧配置中的拼写 `imcompatible`）声明互斥组件；声明按双向处理，选择其中一个时另一个会暂时禁用，若另一个已选中则安装器会询问是否自动取消其勾选。
 
 顶层 `uninstaller` 对象分别配置 Windows、Linux 和 macOS 的卸载器包。其中 `source_file` 是随组件分发的源文件，`installed_executable` 是安装完成后的可执行文件相对路径。卸载器必须放入必选组件对应的平台文件列表，并在 `destinations` 中安装到 `{install_path}`。生产配置让 `main` 核心拥有卸载器，因此移除核心时也会移除卸载器和 Windows 注册表项；BepInEx 由独立组件拥有并会保留。
 

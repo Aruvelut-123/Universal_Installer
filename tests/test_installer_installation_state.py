@@ -197,6 +197,84 @@ def _load_state(page, root):
     return main.ComponentsPage.load_installation_state(page, root)
 
 
+class InstallerSelectionOptimizationTests(unittest.TestCase):
+    def test_unique_component_files_deduplicate_shared_payloads(self):
+        items = {
+            "runtime": {"files": ["pack/shared.zip"]},
+            "core": {"files": ["pack/shared.zip", "pack/core.zip"]},
+        }
+
+        self.assertEqual(
+            list(main.iter_unique_component_files(items, ["runtime", "core"])),
+            ["pack/shared.zip", "pack/core.zip"],
+        )
+
+    def test_component_file_list_deduplicates_repeated_entries(self):
+        self.assertEqual(
+            main.get_component_files({
+                "files": ["pack/shared.zip", "pack/shared.zip"],
+            }),
+            ["pack/shared.zip"],
+        )
+
+    def test_incompatibility_is_symmetric_for_selection(self):
+        items = {
+            "core": {"incompatible": ["mod"]},
+            "mod": {"incompatible": []},
+        }
+
+        self.assertEqual(
+            main.incompatible_component_ids(items, "core"), {"mod"}
+        )
+        self.assertEqual(
+            main.incompatible_component_ids(items, "mod"), {"core"}
+        )
+
+    def test_misspelled_imcompatible_field_is_normalized(self):
+        items = [
+            {
+                "id": "core", "name": "Core", "required": True,
+                "checked": True, "dependencies": [], "is_core": True,
+                "imcompatible": ["alternative"], "files": [],
+            },
+            {
+                "id": "alternative", "name": "Alternative", "required": False,
+                "checked": False, "dependencies": [], "is_core": False,
+                "files": [],
+            },
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "items.json").write_text(
+                json.dumps({"items": items}), encoding="utf-8"
+            )
+            with mock.patch.object(main, "APPLICATION_DIR", root), \
+                 mock.patch.object(main, "METADATA_PATH", "items.json"), \
+                 mock.patch.object(main, "metadata", None):
+                normalized = main.get_metadata()
+
+        self.assertEqual(
+            normalized["items"][0]["incompatible"], ["alternative"]
+        )
+
+    def test_unknown_incompatible_component_is_rejected(self):
+        items = [{
+            "id": "core", "name": "Core", "required": True,
+            "checked": True, "dependencies": [], "is_core": True,
+            "incompatible": ["missing"], "files": [],
+        }]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "items.json").write_text(
+                json.dumps({"items": items}), encoding="utf-8"
+            )
+            with mock.patch.object(main, "APPLICATION_DIR", root), \
+                 mock.patch.object(main, "METADATA_PATH", "items.json"), \
+                 mock.patch.object(main, "metadata", None):
+                with self.assertRaises(ValueError):
+                    main.get_metadata()
+
+
 class ComponentStateRecoveryTests(unittest.TestCase):
     def test_deleted_record_falls_back_to_defaults(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -325,6 +325,8 @@ COMPONENT_METADATA_ALIASES = {
     "default_linux_install_path": "default_path_linux",
     "default_macos_install_path": "default_path_macos",
     "core_file": "core_file",
+    # Keep the historical misspelling accepted in user configuration.
+    "imcompatible": "incompatible",
 }
 
 
@@ -422,6 +424,7 @@ def get_metadata() -> dict:
             if internal_key not in item and readable_key in item:
                 item[internal_key] = item[readable_key]
         item.setdefault("is_core", False)
+        item.setdefault("incompatible", [])
         normalized_items.append(item)
     data["items"] = normalized_items
 
@@ -487,6 +490,7 @@ def get_metadata() -> dict:
             "required": bool,
             "checked": bool,
             "dependencies": list,
+            "incompatible": list,
             "is_core": bool,
         }
         invalid_fields = [
@@ -504,6 +508,19 @@ def get_metadata() -> dict:
             for dependency_id in item["dependencies"]
         ):
             raise ValueError(f"组件 {component_id} 的 dependencies 只能包含字符串")
+        if any(
+            not isinstance(incompatible_id, str)
+            for incompatible_id in item["incompatible"]
+        ):
+            raise ValueError(f"组件 {component_id} 的 incompatible 只能包含字符串")
+        if component_id in item["incompatible"]:
+            raise ValueError(f"组件 {component_id} 不能与自身不兼容")
+        missing_incompatible = set(item["incompatible"]) - known_ids
+        if missing_incompatible:
+            raise ValueError(
+                f"组件 {component_id} 引用了不存在的不兼容组件: "
+                f"{', '.join(sorted(missing_incompatible))}"
+            )
         for key in file_keys:
             files = item.get(key)
             if files is not None and (
@@ -774,7 +791,48 @@ def get_component_files(item: dict) -> list[str]:
         if platform_files:
             files.extend(platform_files)
             break
-    return files
+    return list(dict.fromkeys(files))
+
+
+def iter_unique_component_files(items_by_id, component_ids):
+    """Yield each payload archive once, preserving component order."""
+    seen = set()
+    for component_id in component_ids:
+        item = items_by_id.get(component_id)
+        if not isinstance(item, dict):
+            continue
+        for file_name in get_component_files(item):
+            if not isinstance(file_name, str):
+                continue
+            normalized = os.path.normcase(os.path.normpath(os.path.abspath(
+                file_name.replace("\\", os.sep).replace("/", os.sep)
+            )))
+            if normalized in seen:
+                continue
+            seen.add(normalized)
+            yield file_name
+
+
+def incompatible_component_ids(items_by_id, component_id):
+    """Return components incompatible with *component_id* in either direction."""
+    item = items_by_id.get(component_id)
+    if not isinstance(item, dict):
+        return set()
+    configured = item.get("incompatible", [])
+    if not isinstance(configured, list):
+        configured = []
+    incompatible = set(
+        value for value in configured
+        if isinstance(value, str) and value in items_by_id
+    )
+    for other_id, other in items_by_id.items():
+        if not isinstance(other, dict):
+            continue
+        other_incompatible = other.get("incompatible", [])
+        if isinstance(other_incompatible, list) and component_id in other_incompatible:
+            incompatible.add(other_id)
+    incompatible.discard(component_id)
+    return incompatible
 
 
 def get_uninstaller_configuration() -> dict:
@@ -1015,6 +1073,7 @@ class InstallThread(QThread):
         }
         self.success = False
         self.recorder = None
+        self.current_progress = 0
         print(f"[DEBUG] InstallThread初始化: path={path}, components={components}")
 
     def _resolve_install_order(self):
@@ -1288,7 +1347,10 @@ class InstallThread(QThread):
         try:
             # 0. 准备工作
             print("[DEBUG] 开始准备安装环境...")
-            self.progress_updated.emit(5, "正在准备安装环境...")
+            self.current_progress = 5
+            self.progress_updated.emit(
+                self.current_progress, "正在准备安装环境..."
+            )
             
             if not os.path.exists(self.path):
                 print(f"[DEBUG] 路径不存在，创建目录: {self.path}")
@@ -1302,7 +1364,9 @@ class InstallThread(QThread):
             selected_components = self._resolve_install_order()
             total_components = len(selected_components)
             core_id = get_core_component()["id"]
-            self._core_selected = core_id in self.components and self.components[core_id]
+            # Dependencies are added by _resolve_install_order(), so the core
+            # may be selected implicitly even when its checkbox was unchecked.
+            self._core_selected = core_id in selected_components
             if total_components == 0:
                 raise ValueError("没有可安装的组件")
             uninstaller_configuration = get_uninstaller_configuration()
@@ -1321,16 +1385,18 @@ class InstallThread(QThread):
                     f"[DEBUG] 处理组件: {component}, "
                     f"进度: {index}/{total_components}"
                 )
+                self.current_progress = start_progress
                 self.progress_updated.emit(
-                    start_progress, f"正在安装组件 {component}..."
+                    self.current_progress, f"正在安装组件 {component}..."
                 )
                 self.recorder.begin_component(component)
                 self._process_component(component)
                 self.recorder.finish_component(component)
 
                 completed_progress = 5 + int(index * 90 / total_components)
+                self.current_progress = completed_progress
                 self.progress_updated.emit(
-                    completed_progress, f"组件 {component} 安装完成"
+                    self.current_progress, f"组件 {component} 安装完成"
                 )
 
             if uninstaller_configuration:
@@ -1358,12 +1424,14 @@ class InstallThread(QThread):
 
             self.success = True
             print("[DEBUG] 所有组件安装成功")
-            self.progress_updated.emit(100, "安装完成！")
+            self.current_progress = 100
+            self.progress_updated.emit(self.current_progress, "安装完成！")
             
         except Exception as e:
             print(f"[ERROR] 安装过程中发生异常: {e}")
             traceback.print_exc()
-            self.progress_updated.emit(0, f"安装失败: {str(e)}")
+            self.current_progress = 0
+            self.progress_updated.emit(self.current_progress, f"安装失败: {str(e)}")
             if registered_uninstaller:
                 remove_windows_uninstall_entry(registered_uninstaller)
             if self.recorder is not None:
@@ -1391,7 +1459,10 @@ class InstallThread(QThread):
             print(f"[DEBUG] 目标目录不存在，创建: {in_path}")
         self.recorder.prepare_directory(in_path)
 
-        self.progress_updated.emit(0, f"正在解压文件{archive_name}到{in_path}")
+        self.progress_updated.emit(
+            getattr(self, "current_progress", 0),
+            f"正在解压文件{archive_name}到{in_path}",
+        )
 
         try:
             print(f"[DEBUG] 开始解压，类型: {archive_type}")
@@ -1401,7 +1472,10 @@ class InstallThread(QThread):
             print(f"[DEBUG] 解压完成: {archive_name}")
             
             print(f"[DEBUG] 解压成功: {archive_name} -> {in_path}")
-            self.progress_updated.emit(0, f"解压成功: {archive_name}")
+            self.progress_updated.emit(
+                getattr(self, "current_progress", 0),
+                f"解压成功: {archive_name}",
+            )
             
         except Exception as e:
             print(f"[ERROR] 解压失败: {e}")
@@ -1667,8 +1741,10 @@ class ComponentsPage(BasePage):
         self.tree_items_by_id = {}
         self.base_labels_by_id = {}
         self.default_states_by_id = {}
+        self.base_enabled_by_id = {}
         self.installed_versions = {}
         self.loaded_install_root = None
+        self.compatibility_prompt_active = False
         self.installation_notice = None
         self.archive_size_cache = {}
         self.has_missing_required_files = False
@@ -1726,6 +1802,9 @@ class ComponentsPage(BasePage):
                 tree_item.setFlags(
                     tree_item.flags() & ~Qt.ItemIsEnabled
                 )
+            self.base_enabled_by_id[item["id"]] = bool(
+                tree_item.flags() & Qt.ItemIsEnabled
+            )
             if item.get("version"):
                 label = f"{label}  v{item['version']}"
             self.base_labels_by_id[item["id"]] = label
@@ -1815,10 +1894,115 @@ class ComponentsPage(BasePage):
                 for index in reversed(range(item.childCount()))
             )
 
+    def selected_component_ids(self):
+        return {
+            component_id
+            for component_id, tree_item in self.tree_items_by_id.items()
+            if tree_item.checkState(0) == Qt.Checked
+        }
+
+    def selected_incompatibility_pairs(self, selected=None):
+        selected = self.selected_component_ids() if selected is None else set(selected)
+        pairs = []
+        for component_id in sorted(selected):
+            for other_id in sorted(
+                incompatible_component_ids(self.items_by_id, component_id)
+            ):
+                if other_id in selected and component_id < other_id:
+                    pairs.append((component_id, other_id))
+        return pairs
+
+    def _apply_compatibility_enabled_states(self, selected=None):
+        selected = self.selected_component_ids() if selected is None else set(selected)
+        blocked = set()
+        for component_id in selected:
+            blocked.update(
+                incompatible_component_ids(self.items_by_id, component_id)
+            )
+        for component_id, tree_item in self.tree_items_by_id.items():
+            base_enabled = self.base_enabled_by_id.get(component_id, True)
+            enabled = base_enabled and (
+                component_id in selected or component_id not in blocked
+            )
+            flags = tree_item.flags()
+            tree_item.setFlags(
+                flags | Qt.ItemIsEnabled
+                if enabled else flags & ~Qt.ItemIsEnabled
+            )
+
+    def _resolve_incompatible_selection(self, preferred_id=None):
+        """Ask before cancelling a conflicting selection made by the user."""
+        if self.compatibility_prompt_active:
+            return
+        pairs = self.selected_incompatibility_pairs()
+        if not pairs:
+            return
+
+        selected = self.selected_component_ids()
+        if preferred_id in selected:
+            conflicts = sorted(
+                incompatible_component_ids(self.items_by_id, preferred_id)
+                & selected
+            )
+            conflicts = [value for value in conflicts if value != preferred_id]
+            if not conflicts:
+                return
+            protected = [
+                value for value in conflicts
+                if self.items_by_id.get(value, {}).get("required")
+            ]
+            if protected:
+                to_uncheck = {preferred_id}
+                message = (
+                    "组件 {} 与必选组件 {} 不兼容，不能同时安装。\n\n"
+                    "将取消勾选 {}。"
+                ).format(
+                    self.items_by_id[preferred_id].get("name", preferred_id),
+                    "、".join(
+                        self.items_by_id[value].get("name", value)
+                        for value in protected
+                    ),
+                    self.items_by_id[preferred_id].get("name", preferred_id),
+                )
+                QMessageBox.information(self, "组件不兼容", message)
+            else:
+                to_uncheck = set(conflicts)
+                message = (
+                    "组件 {} 与以下已选择组件互相不兼容：\n\n{}\n\n"
+                    "是否自动取消勾选并禁用这些不兼容组件？"
+                ).format(
+                    self.items_by_id[preferred_id].get("name", preferred_id),
+                    "、".join(
+                        self.items_by_id[value].get("name", value)
+                        for value in conflicts
+                    ),
+                )
+                self.compatibility_prompt_active = True
+                try:
+                    reply = QMessageBox.warning(
+                        self, "组件不兼容", message,
+                        QMessageBox.Yes | QMessageBox.No, QMessageBox.No,
+                    )
+                finally:
+                    self.compatibility_prompt_active = False
+                if reply != QMessageBox.Yes:
+                    to_uncheck = {preferred_id}
+        else:
+            # Programmatic/default selections have no single newly-selected
+            # component. Keep the first item stable and let the user resolve
+            # the conflict before proceeding.
+            return
+
+        with blocked_signals(self.components_list):
+            for component_id in to_uncheck:
+                self.tree_items_by_id[component_id].setCheckState(
+                    0, Qt.Unchecked
+                )
+
     def set_component_states(self, states):
         with blocked_signals(self.components_list):
             for component_id, tree_item in self.tree_items_by_id.items():
-                if not tree_item.flags() & Qt.ItemIsEnabled:
+                if not self.base_enabled_by_id.get(component_id, True):
                     continue
                 if self.items_by_id[component_id].get("required"):
                     tree_item.setCheckState(0, Qt.Checked)
@@ -1888,6 +2072,24 @@ class ComponentsPage(BasePage):
         )
 
     def on_next(self):
+        conflicts = self.selected_incompatibility_pairs()
+        if conflicts:
+            names = "、".join(
+                "{} / {}".format(
+                    self.items_by_id[left].get("name", left),
+                    self.items_by_id[right].get("name", right),
+                )
+                for left, right in conflicts
+            )
+            QMessageBox.warning(
+                self,
+                "组件不兼容",
+                "以下组件互相不兼容，请取消其中一个后再继续：\n\n{}".format(
+                    names
+                ),
+            )
+            return
+
         # 保存选择的组件
         self.parent.selected_components = {}
         for item in self.iter_tree_items():
@@ -2004,17 +2206,21 @@ class ComponentsPage(BasePage):
                     stack.extend(
                         child.child(index) for index in range(child.childCount())
                     )
+        self._resolve_incompatible_selection(item.data(0, Qt.UserRole))
         self.synchronize_selection()
 
     def get_selected_components_sizes(self):
-        total_size = 0
-        for component in self.iter_tree_items():
-            if component.checkState(0) != Qt.Checked:
-                continue
-            component_id = component.data(0, Qt.UserRole)
-            for file_name in get_component_files(self.items_by_id[component_id]):
-                total_size += self.get_file_installed_size(file_name)
-        return total_size
+        selected_ids = [
+            component.data(0, Qt.UserRole)
+            for component in self.iter_tree_items()
+            if component.checkState(0) == Qt.Checked
+        ]
+        return sum(
+            self.get_file_installed_size(file_name)
+            for file_name in iter_unique_component_files(
+                self.items_by_id, selected_ids
+            )
+        )
 
     def get_file_installed_size(self, file_name):
         path = os.path.abspath(
@@ -2095,6 +2301,12 @@ class ComponentsPage(BasePage):
         return results
 
     def on_item_changed(self, item, column):
+        if self.components_list.signalsBlocked():
+            return
+        if item.checkState(0) == Qt.Checked:
+            self._resolve_incompatible_selection(
+                item.data(0, Qt.UserRole)
+            )
         self.synchronize_selection()
 
     def synchronize_selection(self):
@@ -2133,6 +2345,7 @@ class ComponentsPage(BasePage):
                 else:
                     parent.setCheckState(0, Qt.PartiallyChecked)
 
+        self._apply_compatibility_enabled_states()
         self.update_selection_summary()
         if self.size_calculation_enabled:
             self.on_select_change_size.emit(self.get_selected_components_sizes())

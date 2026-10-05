@@ -73,11 +73,34 @@ def _decode_manifest(data):
 
 
 def _atomic_write_manifest(path, data):
+    """Write a manifest durably without reusing a stale temporary pathname."""
+    path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + ".tmp")
-    with temporary.open("wb") as file:
-        file.write(_encode_manifest(data))
-    os.replace(str(temporary), str(path))
+    descriptor = None
+    temporary = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=path.name + ".", suffix=".tmp", dir=str(path.parent)
+        )
+        temporary = Path(temporary_name)
+        with os.fdopen(descriptor, "wb") as file:
+            descriptor = None
+            file.write(_encode_manifest(data))
+            file.flush()
+            os.fsync(file.fileno())
+        os.replace(str(temporary), str(path))
+    except Exception:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        if temporary is not None:
+            try:
+                temporary.unlink()
+            except OSError:
+                pass
+        raise
 
 
 def _copy_file(source, destination):
@@ -436,10 +459,17 @@ class InstallRecorder:
         """Install one file, skipping writes when its content is unchanged."""
         source = Path(source)
         destination = Path(destination)
+        source_stat = source.stat()
         source_digest = _file_digest(source)
         destination_digest = None
         if destination.is_file() and not destination.is_symlink():
-            destination_digest = _file_digest(destination)
+            try:
+                # A size mismatch already proves that hashing the destination
+                # cannot produce a match, which matters for large game files.
+                if destination.stat().st_size == source_stat.st_size:
+                    destination_digest = _file_digest(destination)
+            except OSError:
+                destination_digest = None
         if source_digest == destination_digest:
             relative = self._relative_path(destination)
             if relative not in self.files:
@@ -711,6 +741,32 @@ def _recorded_manifest_path(manifest):
         return None
 
 
+def _resolve_recorded_file_path(install_root, relative):
+    """Resolve a manifest file without following links in its final name."""
+    if not isinstance(relative, str) or not relative.strip():
+        raise ValueError("安装信息包含无效文件路径")
+    normalized = relative.replace("\\", "/")
+    relative_path = Path(normalized)
+    if (
+        normalized.startswith("/")
+        or (len(normalized) >= 2 and normalized[1] == ":")
+        or relative_path.is_absolute()
+        or any(part == ".." for part in relative_path.parts)
+        or not relative_path.parts
+        or relative_path.parts[0] == INSTALL_DATA_DIRECTORY
+    ):
+        raise ValueError("拒绝删除安装目录之外或安装信息目录中的路径: {}".format(relative))
+
+    root = Path(install_root).resolve()
+    target = root / relative_path
+    try:
+        target.relative_to(root)
+        target.parent.resolve().relative_to(root)
+    except (OSError, ValueError) as error:
+        raise ValueError("拒绝删除通过链接指向安装目录之外的路径: {}".format(relative)) from error
+    return target
+
+
 def load_existing_installation(manifest_path, install_root):
     """Read the record kept in *install_root*, tolerating damaged records.
 
@@ -890,11 +946,10 @@ def uninstall(manifest_path, manifest, selected_components=None):
 
         if not entry.get("managed", True):
             continue
-        target = (install_root / Path(relative)).absolute()
         try:
-            target.relative_to(install_root.absolute())
-        except ValueError:
-            errors.append("拒绝删除安装目录之外的路径: {}".format(target))
+            target = _resolve_recorded_file_path(install_root, relative)
+        except ValueError as error:
+            errors.append(str(error))
             continue
         if deferred is not None and (
             target == deferred or _is_relative_to(target, deferred)
@@ -1008,6 +1063,7 @@ def uninstall(manifest_path, manifest, selected_components=None):
 def remove_running_uninstaller(path):
     if path is None:
         return
+    path = Path(path)
     if platform.system().lower() == "windows":
         target = str(Path(path).resolve()).replace("'", "''")
         target_literal = "'{}'".format(target)
@@ -1031,10 +1087,18 @@ def remove_running_uninstaller(path):
             close_fds=True,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
-    elif path.is_dir():
-        shutil.rmtree(str(path))
     else:
-        path.unlink()
+        try:
+            # Check symlinks first: is_dir() follows a symlink to a directory.
+            if path.is_symlink() or path.is_file():
+                path.unlink()
+            elif path.is_dir():
+                shutil.rmtree(str(path))
+            elif path.exists():
+                path.unlink()
+        except FileNotFoundError:
+            # Another cleanup attempt may already have removed the file.
+            pass
 
 
 def resolve_uninstaller_ui_asset(manifest_path, manifest, role):

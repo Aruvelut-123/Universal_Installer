@@ -23,6 +23,7 @@
             "description": "<b>Shared runtime</b>: files used by the core and add-ons.",
             "parent_component": null,
             "dependencies": [],
+            "incompatible": [],
             "common_files": null,
             "windows_x86_files": [
                 "pack/runtime-windows-x86.zip"
@@ -101,6 +102,7 @@
             "description": "Grouping-only entry; components without files may omit version.",
             "parent_component": null,
             "dependencies": [],
+            "incompatible": [],
             "common_files": null,
             "destinations": null
         },
