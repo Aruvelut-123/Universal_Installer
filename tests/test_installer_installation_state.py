@@ -230,6 +230,62 @@ class InstallerSelectionOptimizationTests(unittest.TestCase):
             main.incompatible_component_ids(items, "mod"), {"core"}
         )
 
+    def test_compatibility_flag_updates_do_not_reenter_item_changed(self):
+        class FakeTree:
+            def __init__(self):
+                self.blocked = False
+
+            def blockSignals(self, value):
+                previous = self.blocked
+                self.blocked = value
+                return previous
+
+            def signalsBlocked(self):
+                return self.blocked
+
+        class FakeItem:
+            def __init__(self, tree, state):
+                self.tree = tree
+                self.state = state
+                self.flags_value = _QT.ItemIsEnabled
+                self.reentrant_events = 0
+
+            def flags(self):
+                return self.flags_value
+
+            def setFlags(self, flags):
+                self.flags_value = flags
+                if not self.tree.blocked:
+                    self.reentrant_events += 1
+
+            def checkState(self, column):
+                return self.state
+
+        tree = FakeTree()
+        page = object.__new__(main.ComponentsPage)
+        page.components_list = tree
+        page.items_by_id = {
+            "a": {"incompatible": ["b"]},
+            "b": {"incompatible": []},
+        }
+        page.tree_items_by_id = {
+            "a": FakeItem(tree, _QT.Checked),
+            "b": FakeItem(tree, _QT.Unchecked),
+        }
+        page.base_enabled_by_id = {"a": True, "b": True}
+
+        page._apply_compatibility_enabled_states()
+
+        self.assertEqual(page.tree_items_by_id["a"].reentrant_events, 0)
+        self.assertEqual(page.tree_items_by_id["b"].reentrant_events, 0)
+        self.assertFalse(
+            page.tree_items_by_id["b"].flags() & _QT.ItemIsEnabled
+        )
+
+        page.tree_items_by_id["a"].state = _QT.Unchecked
+        page._apply_compatibility_enabled_states()
+        self.assertTrue(page.tree_items_by_id["b"].flags() & _QT.ItemIsEnabled)
+
     def test_misspelled_imcompatible_field_is_normalized(self):
         items = [
             {

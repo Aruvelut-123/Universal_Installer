@@ -1745,6 +1745,7 @@ class ComponentsPage(BasePage):
         self.installed_versions = {}
         self.loaded_install_root = None
         self.compatibility_prompt_active = False
+        self._selection_sync_active = False
         self.installation_notice = None
         self.archive_size_cache = {}
         self.has_missing_required_files = False
@@ -1919,16 +1920,19 @@ class ComponentsPage(BasePage):
             blocked.update(
                 incompatible_component_ids(self.items_by_id, component_id)
             )
-        for component_id, tree_item in self.tree_items_by_id.items():
-            base_enabled = self.base_enabled_by_id.get(component_id, True)
-            enabled = base_enabled and (
-                component_id in selected or component_id not in blocked
-            )
-            flags = tree_item.flags()
-            tree_item.setFlags(
-                flags | Qt.ItemIsEnabled
-                if enabled else flags & ~Qt.ItemIsEnabled
-            )
+        with blocked_signals(self.components_list):
+            for component_id, tree_item in self.tree_items_by_id.items():
+                base_enabled = self.base_enabled_by_id.get(component_id, True)
+                enabled = base_enabled and (
+                    component_id in selected or component_id not in blocked
+                )
+                flags = tree_item.flags()
+                updated_flags = (
+                    flags | Qt.ItemIsEnabled
+                    if enabled else flags & ~Qt.ItemIsEnabled
+                )
+                if updated_flags != flags:
+                    tree_item.setFlags(updated_flags)
 
     def _resolve_incompatible_selection(self, preferred_id=None):
         """Ask before cancelling a conflicting selection made by the user."""
@@ -2301,13 +2305,20 @@ class ComponentsPage(BasePage):
         return results
 
     def on_item_changed(self, item, column):
-        if self.components_list.signalsBlocked():
+        if (
+            self.components_list.signalsBlocked()
+            or getattr(self, "_selection_sync_active", False)
+        ):
             return
-        if item.checkState(0) == Qt.Checked:
-            self._resolve_incompatible_selection(
-                item.data(0, Qt.UserRole)
-            )
-        self.synchronize_selection()
+        self._selection_sync_active = True
+        try:
+            if item.checkState(0) == Qt.Checked:
+                self._resolve_incompatible_selection(
+                    item.data(0, Qt.UserRole)
+                )
+            self.synchronize_selection()
+        finally:
+            self._selection_sync_active = False
 
     def synchronize_selection(self):
         """Enforce dependency and parent-state invariants without signal recursion."""
